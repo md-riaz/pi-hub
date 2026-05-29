@@ -6,6 +6,8 @@
 - Added memory-only Pi Hub server (`pi-hub-server.mjs`) with token auth, HTTP JSON endpoints, SSE stream, session registry, and command queues.
 - Added Flutter Android app (`apps/pi_hub_app`) for Tailscale/LAN monitoring and control.
 - Updated README with Pi Hub setup and Android app usage.
+- Expanded repository README and Flutter app README with clone/install/use/build/API/troubleshooting instructions.
+- Added root `.gitignore` and cleaned Flutter app metadata for repo readiness.
 - Confirmed user decisions after initial commit:
   - hybrid later, local VM server now
   - Tailscale/LAN phone access

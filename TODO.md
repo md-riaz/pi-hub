@@ -10,6 +10,8 @@
 - [x] Add Flutter Android dashboard.
 - [x] Support sending prompts to selected Pi session.
 - [x] Add first-pass full controls: abort, compact, model switch, shutdown.
+- [x] Document clone, install, app run/build, dashboard usage, API, and troubleshooting.
+- [x] Add repository ignore rules for local build/runtime artifacts and secrets.
 - [ ] Add command acknowledgement/result UI beyond queued snackbars.
 - [ ] Add `/hub rotate-token` or setup UI for token rotation.
 - [ ] Add stronger auth/HTTPS before any public internet exposure.
