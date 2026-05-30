@@ -540,6 +540,17 @@ export default function piHubExtension(pi: ExtensionAPI) {
 						continue;
 					}
 
+					if (command?.type === "diff_review_response") {
+						const action = String(command.action || command.status || "comment");
+						const diffReviewId = String(command.diffReviewId || command.id || "unknown");
+						if (ctx.hasUI) {
+							const comment = typeof command.comment === "string" && command.comment.trim() ? `\n${command.comment.trim()}` : "";
+							ctx.ui.notify(`Diff review ${diffReviewId}: ${action}${comment}`, action === "changes_requested" || action === "request_changes" ? "warning" : "info");
+						}
+						await sendEvent({ type: "diff_review_response", diffReviewId, action, status: command.status, comment: command.comment });
+						await sendCommandResult(command, true);
+						continue;
+					}
 					throw new Error(`Unsupported command type: ${String(command?.type || "unknown")}`);
 				} catch (error) {
 					await sendCommandResult(command, false, error);

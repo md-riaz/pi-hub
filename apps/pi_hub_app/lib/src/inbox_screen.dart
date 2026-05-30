@@ -13,6 +13,7 @@ class InboxScreen extends StatefulWidget {
     required this.onOpenSession,
     required this.approvals,
     required this.onApprovalResponse,
+    this.onOpenDiffReview,
   });
 
   final List<HubInboxItem> items;
@@ -26,6 +27,7 @@ class InboxScreen extends StatefulWidget {
     String comment,
   )
   onApprovalResponse;
+  final ValueChanged<String>? onOpenDiffReview;
 
   @override
   State<InboxScreen> createState() => _InboxScreenState();
@@ -124,6 +126,13 @@ class _InboxScreenState extends State<InboxScreen> {
                       onOpenApproval: _approvalFor(item) == null
                           ? null
                           : () => _openApproval(_approvalFor(item)!),
+                      onOpenAction:
+                          _targetDiffReviewId(item) == null ||
+                              widget.onOpenDiffReview == null
+                          ? null
+                          : () => widget.onOpenDiffReview!(
+                              _targetDiffReviewId(item)!,
+                            ),
                     );
                   },
                 ),
@@ -149,6 +158,7 @@ class _InboxScreenState extends State<InboxScreen> {
   String? _targetSessionId(HubInboxItem item) {
     final ref = item.actionRef;
     if (ref?.kind == 'session' && ref!.id.isNotEmpty) return ref.id;
+    if (ref?.kind == 'diff_review') return null;
     return item.sessionId;
   }
 
@@ -171,6 +181,12 @@ class _InboxScreenState extends State<InboxScreen> {
             widget.onApprovalResponse(approval, response, comment),
       ),
     );
+  }
+
+  String? _targetDiffReviewId(HubInboxItem item) {
+    final ref = item.actionRef;
+    if (ref?.kind == 'diff_review' && ref!.id.isNotEmpty) return ref.id;
+    return null;
   }
 }
 
@@ -294,6 +310,7 @@ class InboxItemCard extends StatelessWidget {
     required this.onMarkRead,
     required this.onOpenSession,
     required this.onOpenApproval,
+    required this.onOpenAction,
   });
 
   final HubInboxItem item;
@@ -302,6 +319,7 @@ class InboxItemCard extends StatelessWidget {
   final VoidCallback? onMarkRead;
   final VoidCallback? onOpenSession;
   final VoidCallback? onOpenApproval;
+  final VoidCallback? onOpenAction;
 
   @override
   Widget build(BuildContext context) {
@@ -377,6 +395,15 @@ class InboxItemCard extends StatelessWidget {
                     label: const Text('Mark read'),
                   ),
                 const SizedBox(width: 8),
+                if (onOpenAction != null) ...[
+                  TextButton.icon(
+                    key: ValueKey('inbox-open-action-${item.id}'),
+                    onPressed: onOpenAction,
+                    icon: const Icon(Icons.rate_review),
+                    label: const Text('Review'),
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 TextButton.icon(
                   key: ValueKey('inbox-open-${item.id}'),
                   onPressed: onOpenApproval ?? onOpenSession,

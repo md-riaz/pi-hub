@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pi_hub_app/main.dart';
 import 'package:pi_hub_app/src/approval_sheet.dart';
 import 'package:pi_hub_app/src/hub_client.dart';
+import 'package:pi_hub_app/src/diff_review_screen.dart';
 import 'package:pi_hub_app/src/hub_models.dart';
 import 'package:pi_hub_app/src/inbox_screen.dart';
 import 'package:pi_hub_app/src/mission_control_screen.dart';
@@ -196,6 +197,61 @@ void main() {
     expect(find.text('1 unread'), findsWidgets);
     expect(find.text('1 pending'), findsWidgets);
     expect(tester.takeException(), isNull);
+  });
+
+  test('HubClient respondToDiffReview calls v2 respond API', () async {
+    final previousOverrides = HttpOverrides.current;
+    HttpOverrides.global = null;
+    addTearDown(() => HttpOverrides.global = previousOverrides);
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    final requestSeen = Completer<Map<String, Object?>>();
+    server.listen((request) async {
+      final body = await utf8.decoder.bind(request).join();
+      requestSeen.complete({
+        'method': request.method,
+        'path': request.uri.path,
+        'authorization': request.headers.value(HttpHeaders.authorizationHeader),
+        'body': body,
+      });
+      request.response.headers.contentType = ContentType.json;
+      request.response.write(
+        jsonEncode({
+          'ok': true,
+          'diffReview': {
+            'id': 'diff-one',
+            'status': 'changes_requested',
+            'responseComment': 'Needs tests',
+            'files': [],
+          },
+        }),
+      );
+      await request.response.close();
+    });
+
+    final client = HubClient()
+      ..configure(
+        baseUrl: 'http://${server.address.host}:${server.port}/',
+        token: 'secret',
+      );
+    addTearDown(client.close);
+
+    final review = await client.respondToDiffReview(
+      'diff-one',
+      'request_changes',
+      comment: 'Needs tests',
+    );
+    final request = await requestSeen.future;
+
+    expect(request['method'], 'POST');
+    expect(request['path'], '/api/v2/diff-reviews/diff-one/respond');
+    expect(request['authorization'], 'Bearer secret');
+    expect(jsonDecode(request['body']! as String), {
+      'action': 'request_changes',
+      'comment': 'Needs tests',
+    });
+    expect(review.status, 'changes_requested');
+    expect(review.responseComment, 'Needs tests');
   });
 
   testWidgets('Inbox renders unread count and calls mark read', (
@@ -399,6 +455,78 @@ void main() {
 
     expect(response, 'reject');
     expect(comment, 'Need safer rollout');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Diff review renders multi-file fixture and submits changes', (
+    WidgetTester tester,
+  ) async {
+    final review = HubDiffReview.fromJson({
+      'id': 'diff-widget',
+      'title': 'Review proposed changes',
+      'status': 'pending',
+      'truncated': true,
+      'files': [
+        {
+          'path': 'lib/main.dart',
+          'status': 'modified',
+          'additions': 12,
+          'deletions': 4,
+          'patch': '@@ -1,3 +1,4 @@\n-import old\n+import new',
+        },
+        {
+          'path': 'test/widget_test.dart',
+          'status': 'added',
+          'additions': 8,
+          'deletions': 0,
+          'patch': '@@ -0,0 +1,2 @@\n+expect(true, isTrue);',
+          'truncated': true,
+        },
+      ],
+    });
+    HubDiffReview? submittedReview;
+    String? submittedAction;
+    String? submittedComment;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(useMaterial3: true),
+        home: DiffReviewScreen(
+          review: review,
+          onRespond: (review, action, comment) async {
+            submittedReview = review;
+            submittedAction = action;
+            submittedComment = comment;
+          },
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('diff-review-title')), findsOneWidget);
+    expect(find.text('Review proposed changes'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('diff-file-lib/main.dart')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('diff-file-test/widget_test.dart')),
+      findsOneWidget,
+    );
+    expect(find.text('+20'), findsOneWidget);
+    expect(find.text('-4'), findsWidgets);
+    expect(find.byKey(const ValueKey('diff-review-truncated')), findsOneWidget);
+    expect(find.textContaining('@@ -1,3 +1,4 @@'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('diff-review-comment')),
+      'Please add coverage',
+    );
+    await tester.tap(find.byKey(const ValueKey('diff-action-request-changes')));
+    await tester.pump();
+
+    expect(submittedReview?.id, 'diff-widget');
+    expect(submittedAction, 'request_changes');
+    expect(submittedComment, 'Please add coverage');
     expect(tester.takeException(), isNull);
   });
 

@@ -13,7 +13,7 @@ Each task uses:
 
 ## Tasks
 
-- [ ] T01 — Add protocol fixtures and v2 contract notes
+- [x] T01 — Add protocol fixtures and v2 contract notes
   - Files:
     - `docs/pi-hub-v2-protocol.md`
     - `apps/pi_hub_app/test/fixtures/mission_control_snapshot.json`
@@ -22,14 +22,14 @@ Each task uses:
   - Evidence: Docs render in Markdown; fixtures parse with `python -m json.tool` or equivalent JSON validation for snapshot.
   - Review estimate: ~180 changed lines, 20 min.
 
-- [ ] T02 — Normalize server events behind existing v1 routes
+- [x] T02 — Normalize server events behind existing v1 routes
   - Files:
     - `pi-hub-server.mjs`
   - Detail: Add `normalizeEvent`, server-generated event IDs, schemaVersion handling, and `applyEvent` entry point. Preserve current `/api/event`, `/api/presence`, `/api/register`, and `/api/stream` responses.
   - Evidence: `node --check pi-hub-server.mjs`; smoke register/event/snapshot still works with current payloads.
   - Review estimate: ~320 changed lines, 40 min.
 
-- [ ] T03 — Add derived session health on server
+- [x] T03 — Add derived session health on server
   - Files:
     - `pi-hub-server.mjs`
   - Detail: Add health derivation to `publicSession()`: state, lastSeenAgeMs, attention, attentionReasons, runningToolCount, pendingCommandCount, contextPercent. Add stale threshold config default without breaking old config.
@@ -72,7 +72,7 @@ Each task uses:
   - Evidence: `flutter analyze && flutter test`; manual emulator check at phone and tablet widths.
   - Review estimate: ~390 changed lines, 60 min.
 
-- [ ] T08 — Add agent health overview UI
+- [x] T08 — Add agent health overview UI
   - Files:
     - `apps/pi_hub_app/lib/src/mission_control_screen.dart`
     - `apps/pi_hub_app/lib/src/widgets/agent_card.dart`
@@ -82,7 +82,7 @@ Each task uses:
   - Evidence: Widget test renders health cards from fixture; `flutter analyze`.
   - Review estimate: ~330 changed lines, 45 min.
 
-- [ ] T09 — Track command lifecycle on server
+- [x] T09 — Track command lifecycle on server
   - Files:
     - `pi-hub-server.mjs`
   - Detail: Add `commands` map/ring, status transitions queued->delivered->applied/failed/expired. Update `/api/send`, `/api/control`, `/api/poll`, and event handling for command result. Broadcast command updates.
@@ -143,7 +143,7 @@ Each task uses:
   - Evidence: Widget test opens approval from inbox and submits reject comment; `flutter analyze && flutter test`.
   - Review estimate: ~330 changed lines, 50 min.
 
-- [ ] T16 — Add diff review backend/protocol
+- [x] T16 — Add diff review backend/protocol
   - Files:
     - `pi-hub-server.mjs`
     - `pi-hub.ts`
@@ -151,7 +151,7 @@ Each task uses:
   - Evidence: Smoke posts diff event with two files, snapshot includes capped review, response queues command; `node --check`.
   - Review estimate: ~390 changed lines, 75 min.
 
-- [ ] T17 — Add diff review mobile UI
+- [x] T17 — Add diff review mobile UI
   - Files:
     - `apps/pi_hub_app/lib/src/diff_review_screen.dart`
     - `apps/pi_hub_app/lib/src/inbox_screen.dart`

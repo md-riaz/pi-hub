@@ -23,6 +23,10 @@ const DEFAULT_CONFIG = {
   commandHistoryLimit: 500,
   inboxLimit: 500,
   inboxDedupeWindowMs: 300_000,
+  diffReviewLimit: 100,
+  diffReviewMaxFiles: 20,
+  diffReviewPatchMaxChars: 12_000,
+  diffReviewTotalPatchMaxChars: 60_000,
 };
 
 function ensureConfig() {
@@ -42,11 +46,19 @@ function ensureConfig() {
   if (!Number.isFinite(Number(config.commandHistoryLimit))) config.commandHistoryLimit = DEFAULT_CONFIG.commandHistoryLimit;
   if (!Number.isFinite(Number(config.inboxLimit))) config.inboxLimit = DEFAULT_CONFIG.inboxLimit;
   if (!Number.isFinite(Number(config.inboxDedupeWindowMs))) config.inboxDedupeWindowMs = DEFAULT_CONFIG.inboxDedupeWindowMs;
+  if (!Number.isFinite(Number(config.diffReviewLimit))) config.diffReviewLimit = DEFAULT_CONFIG.diffReviewLimit;
+  if (!Number.isFinite(Number(config.diffReviewMaxFiles))) config.diffReviewMaxFiles = DEFAULT_CONFIG.diffReviewMaxFiles;
+  if (!Number.isFinite(Number(config.diffReviewPatchMaxChars))) config.diffReviewPatchMaxChars = DEFAULT_CONFIG.diffReviewPatchMaxChars;
+  if (!Number.isFinite(Number(config.diffReviewTotalPatchMaxChars))) config.diffReviewTotalPatchMaxChars = DEFAULT_CONFIG.diffReviewTotalPatchMaxChars;
   config.staleThresholdMs = Math.max(0, Number(config.staleThresholdMs));
   config.commandTimeoutMs = Math.max(1000, Number(config.commandTimeoutMs));
   config.commandHistoryLimit = Math.max(1, Number(config.commandHistoryLimit));
   config.inboxLimit = Math.max(1, Number(config.inboxLimit));
   config.inboxDedupeWindowMs = Math.max(1000, Number(config.inboxDedupeWindowMs));
+  config.diffReviewLimit = Math.max(1, Number(config.diffReviewLimit));
+  config.diffReviewMaxFiles = Math.max(1, Number(config.diffReviewMaxFiles));
+  config.diffReviewPatchMaxChars = Math.max(256, Number(config.diffReviewPatchMaxChars));
+  config.diffReviewTotalPatchMaxChars = Math.max(256, Number(config.diffReviewTotalPatchMaxChars));
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
   return config;
 }
@@ -58,6 +70,7 @@ const commands = new Map();
 const inboxItems = new Map();
 const inboxDedupe = new Map();
 const approvals = new Map();
+const diffReviews = new Map();
 const watchers = new Set();
 const PENDING_COMMAND_STATUSES = new Set(["queued", "delivered"]);
 let eventSeq = 0;
@@ -140,7 +153,7 @@ function serverCapabilities() {
     inbox: true,
     commandLifecycle: true,
     approvals: true,
-    diffReviews: false,
+    diffReviews: true,
     agentCreation: false,
     pushDevices: false,
   };
@@ -182,6 +195,10 @@ function snapshot() {
       staleThresholdMs: Number(config.staleThresholdMs),
       commandTimeoutMs: Number(config.commandTimeoutMs),
       inboxLimit: Number(config.inboxLimit),
+      diffReviewLimit: Number(config.diffReviewLimit),
+      diffReviewMaxFiles: Number(config.diffReviewMaxFiles),
+      diffReviewPatchMaxChars: Number(config.diffReviewPatchMaxChars),
+      diffReviewTotalPatchMaxChars: Number(config.diffReviewTotalPatchMaxChars),
       capabilities: serverCapabilities(),
     },
     sessions: Array.from(sessions.values())
@@ -190,6 +207,7 @@ function snapshot() {
     commands: publicCommands(),
     inboxItems: publicInboxItems(),
     approvals: publicApprovals(),
+    diffReviews: publicDiffReviews(),
   };
 }
 
@@ -220,7 +238,7 @@ function readBody(req) {
     req.setEncoding("utf8");
     req.on("data", chunk => {
       body += chunk;
-      if (body.length > 5_000_000) {
+      if (body.length > 6_000_000) {
         reject(new Error("body too large"));
         req.destroy();
       }
@@ -334,6 +352,172 @@ function trimInboxItems() {
   for (const item of oldest) {
     if (inboxItems.size <= limit) break;
     inboxItems.delete(item.id);
+  }
+}
+
+function capTextWithFlag(value, max) {
+  const text = typeof value === "string" ? value : value == null ? "" : String(value);
+  const limit = Math.max(0, Number(max) || 0);
+  if (text.length <= limit) return { text, truncated: false, originalLength: text.length };
+  const marker = "\n...[truncated " + (text.length - limit) + " chars]";
+  if (limit <= marker.length) return { text: marker.slice(0, limit), truncated: true, originalLength: text.length };
+  return {
+    text: `${text.slice(0, limit - marker.length)}${marker}`,
+    truncated: true,
+    originalLength: text.length,
+  };
+}
+
+function sanitizeDiffPath(value) {
+  let raw = typeof value === "string" ? value : value == null ? "" : String(value);
+  raw = raw.split("\\").join("/").replace(/[\u0000-\u001f\u007f]/g, "").trim();
+  raw = raw.replace(/^[a-zA-Z]:\/+/, "").replace(/^\/+/, "");
+  const parts = [];
+  for (const part of raw.split("/")) {
+    if (!part || part === "." || part === "..") continue;
+    parts.push(part.replace(/[<>:"|?*]/g, "_"));
+  }
+  const sanitized = parts.join("/").slice(0, 240);
+  return sanitized || "unnamed-file";
+}
+
+function sanitizeDiffFile(input = {}, remainingChars = Number(config.diffReviewTotalPatchMaxChars)) {
+  const sourcePatch = typeof input.patch === "string" ? input.patch : input.patch == null ? "" : String(input.patch);
+  const patchCap = Math.max(0, Math.min(Number(config.diffReviewPatchMaxChars), remainingChars));
+  const capped = capTextWithFlag(sourcePatch, patchCap);
+  const originalLength = Number.isFinite(Number(input.originalLength)) ? Number(input.originalLength) : capped.originalLength;
+  const truncated = Boolean(input.truncated || capped.truncated || originalLength > patchCap);
+  const patchLength = Math.min(originalLength, patchCap);
+  return {
+    path: sanitizeDiffPath(input.path || input.file || input.filePath),
+    status: String(input.status || "modified").slice(0, 40),
+    additions: Math.max(0, Number(input.additions || 0) || 0),
+    deletions: Math.max(0, Number(input.deletions || 0) || 0),
+    patch: capped.text,
+    truncated,
+    originalLength,
+    patchLength,
+  };
+}
+
+function publicDiffFile(file) {
+  const { patchLength, ...publicFile } = file;
+  return publicFile;
+}
+
+function publicDiffReview(review) {
+  return {
+    id: review.id,
+    sessionId: review.sessionId || null,
+    title: review.title,
+    status: review.status,
+    files: review.files.map(publicDiffFile),
+    createdAt: review.createdAt,
+    updatedAt: review.updatedAt,
+    resolvedAt: review.resolvedAt || null,
+    responseComment: review.responseComment || null,
+    responseAction: review.responseAction || null,
+    truncated: Boolean(review.truncated),
+  };
+}
+
+function publicDiffReviews() {
+  return Array.from(diffReviews.values())
+    .sort((a, b) => Number(b.updatedAt || b.createdAt || 0) - Number(a.updatedAt || a.createdAt || 0))
+    .map(publicDiffReview);
+}
+
+function trimDiffReviews() {
+  const limit = Number(config.diffReviewLimit);
+  if (diffReviews.size <= limit) return;
+  const oldest = Array.from(diffReviews.values()).sort((a, b) => Number(a.updatedAt || a.createdAt || 0) - Number(b.updatedAt || b.createdAt || 0));
+  for (const review of oldest) {
+    if (diffReviews.size <= limit) break;
+    if (review.status !== "pending") diffReviews.delete(review.id);
+  }
+  for (const review of oldest) {
+    if (diffReviews.size <= limit) break;
+    diffReviews.delete(review.id);
+  }
+}
+
+function upsertDiffReviewFromEvent(event) {
+  const payload = event.payload || {};
+  const input = payload.diffReview && typeof payload.diffReview === "object" ? payload.diffReview : payload;
+  const id = String(input.id || payload.diffReviewId || `diff_${crypto.randomUUID()}`);
+  const now = Date.now();
+  let remaining = Number(config.diffReviewTotalPatchMaxChars);
+  const rawFiles = Array.isArray(input.files) ? input.files : [];
+  const files = [];
+  let truncated = rawFiles.length > Number(config.diffReviewMaxFiles);
+  for (const rawFile of rawFiles.slice(0, Number(config.diffReviewMaxFiles))) {
+    const file = sanitizeDiffFile(rawFile && typeof rawFile === "object" ? rawFile : {}, remaining);
+    remaining = Math.max(0, remaining - file.patchLength);
+    truncated = truncated || file.truncated || remaining <= 0;
+    files.push(file);
+  }
+  const existing = diffReviews.get(id);
+  const review = {
+    id,
+    sessionId: event.sessionId,
+    title: String(input.title || "Review proposed changes").slice(0, 200),
+    status: String(input.status || existing?.status || "pending"),
+    files,
+    createdAt: Number(input.createdAt || existing?.createdAt || event.timestamp || now),
+    updatedAt: Number(input.updatedAt || now),
+    resolvedAt: existing?.resolvedAt || null,
+    responseComment: existing?.responseComment || null,
+    responseAction: existing?.responseAction || null,
+    truncated,
+  };
+  diffReviews.set(id, review);
+  trimDiffReviews();
+  upsertInboxItem({
+    sessionId: event.sessionId,
+    type: "diff_review",
+    severity: String(input.severity || "warning"),
+    title: review.title,
+    body: `${sessionLabel(event.sessionId)} has ${files.length} file${files.length === 1 ? "" : "s"} ready for review${truncated ? " (truncated)" : ""}.`,
+    actionRef: { kind: "diff_review", id },
+    dedupeKey: `${event.sessionId || "global"}:diff_review:${id}`,
+  });
+  broadcast({ type: "diff_review.updated", diffReview: publicDiffReview(review) });
+  return review;
+}
+
+function respondToDiffReview(id, body = {}) {
+  const review = diffReviews.get(String(id));
+  if (!review) return undefined;
+  const action = String(body.action || body.status || "").trim();
+  const allowed = new Set(["approve", "approved", "request_changes", "changes_requested", "comment"]);
+  if (!allowed.has(action)) throw new Error("unsupported diff review action");
+  const status = action === "approve" || action === "approved" ? "approved" : action === "comment" ? "pending" : "changes_requested";
+  if (review.status !== "pending") throw new Error("diff review already resolved");
+  const now = Date.now();
+  const comment = typeof body.comment === "string" ? capString(body.comment, 4000) : "";
+  review.status = status;
+  review.updatedAt = now;
+  if (status !== "pending") review.resolvedAt = now;
+  review.responseAction = action;
+  review.responseComment = comment || null;
+  const command = createCommand(review.sessionId, "diff_review_response", {
+    diffReviewId: review.id,
+    action,
+    status,
+    comment,
+  });
+  markInboxForAction("diff_review", review.id, status === "pending" ? undefined : now);
+  broadcast({ type: "diff_review.updated", diffReview: publicDiffReview(review), command: publicCommand(command) });
+  return { review, command };
+}
+
+function markInboxForAction(kind, id, readAt) {
+  const now = Date.now();
+  for (const item of inboxItems.values()) {
+    if (item.actionRef?.kind !== kind || item.actionRef?.id !== id) continue;
+    if (readAt !== undefined) item.readAt = readAt;
+    item.updatedAt = now;
+    broadcast({ type: "inbox.updated", inboxItem: publicInboxItem(item) });
   }
 }
 
@@ -526,7 +710,10 @@ function processInboxForEvent(event, session) {
     upsertApprovalFromEvent(event);
   }
   if (type === "diff_review.requested" || type === "diff_review_requested") {
-    createActionInbox(event, "diffReview", { type: "diff_review", refKind: "diff_review", title: "Diff review ready", body: (sessionId, review) => `${sessionLabel(sessionId)} has ${Array.isArray(review.files) ? review.files.length : ""} files ready for review.` });
+    const payload = event.payload || {};
+    const record = payload.diffReview && typeof payload.diffReview === "object" ? payload.diffReview : payload;
+    const id = String(record.id || payload.diffReviewId || "");
+    if (!event.diffReview && id && !diffReviews.has(id)) upsertDiffReviewFromEvent(event);
   }
   createHealthInboxForSession(session);
 }
@@ -601,6 +788,7 @@ function createCommandFailureInbox(command, reason = "failed") {
 }
 
 function createCommand(sessionId, type, payload = {}) {
+  if (!sessionId || typeof sessionId !== "string") throw new Error("sessionId required");
   expireCommands();
   const createdAt = Date.now();
   const command = {
@@ -890,6 +1078,11 @@ function applyEvent(event) {
   if (!event?.sessionId) return undefined;
   const session = touchSession(getOrCreateSession(event.sessionId));
   const legacyEvent = { ...event.payload, type: event.legacyType || event.type };
+  if (event.type === "diff_review.requested" || event.legacyType === "diff_review_requested") {
+    const review = upsertDiffReviewFromEvent(event);
+    event.diffReview = review;
+    legacyEvent.diffReview = review;
+  }
   if (event.type === "session.registered") {
     const info = event.payload.session && typeof event.payload.session === "object" ? event.payload.session : event.payload;
     Object.assign(session, {
@@ -937,7 +1130,8 @@ function deriveSessionHealth(session) {
   const hasAgentError = recentLastEvent && (session.lastEvent?.severity === "error" || (errorPayload.error && session.lastEvent?.type !== "command.queued"));
   const pendingActionType = recentLastEvent ? session.lastEvent?.type : undefined;
   const hasPendingApproval = pendingApprovalCountForSession(session.id) > 0;
-  const hasPendingDiff = pendingActionType === "diff_review.requested" || pendingActionType === "diff_review_requested";
+  const sessionDiffReviews = Array.from(diffReviews.values()).filter(review => review.sessionId === session.id);
+  const hasPendingDiff = sessionDiffReviews.some(review => review.status === "pending") || (!sessionDiffReviews.length && (pendingActionType === "diff_review.requested" || pendingActionType === "diff_review_requested"));
 
   if (explicitOffline) attentionReasons.push("offline");
   if (isStale) attentionReasons.push("stale");
@@ -1115,6 +1309,19 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { ok: true, approval: publicApproval(result.approval), command: publicCommand(result.command), commandId: result.command.id });
       return;
     }
+
+    const diffRespondMatch = url.pathname.match(/^\/api\/v2\/diff-reviews\/([^/]+)\/respond$/);
+    if (req.method === "POST" && diffRespondMatch) {
+      const body = await readBody(req);
+      const result = respondToDiffReview(decodeURIComponent(diffRespondMatch[1]), body);
+      if (!result) {
+        sendJson(res, 404, { error: "diff review not found" });
+        return;
+      }
+      sendJson(res, 200, { ok: true, diffReview: publicDiffReview(result.review), command: publicCommand(result.command) });
+      return;
+    }
+
 
     if (req.method === "POST" && url.pathname === "/api/send") {
       const body = await readBody(req);

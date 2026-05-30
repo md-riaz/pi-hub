@@ -577,6 +577,10 @@ class HubDiffReview {
     required this.files,
     required this.createdAt,
     required this.updatedAt,
+    this.resolvedAt,
+    this.responseComment,
+    this.responseAction,
+    this.truncated = false,
   });
 
   final String id;
@@ -586,6 +590,16 @@ class HubDiffReview {
   final List<HubDiffFile> files;
   final int? createdAt;
   final int? updatedAt;
+  final int? resolvedAt;
+  final String? responseComment;
+  final String? responseAction;
+  final bool truncated;
+
+  bool get pending => status == 'pending';
+  int get additions => files.fold(0, (sum, file) => sum + file.additions);
+  int get deletions => files.fold(0, (sum, file) => sum + file.deletions);
+  bool get hasTruncatedFiles =>
+      truncated || files.any((file) => file.truncated);
 
   factory HubDiffReview.fromJson(Map<String, dynamic> json) {
     return HubDiffReview(
@@ -596,6 +610,10 @@ class HubDiffReview {
       files: _mapList(json['files']).map(HubDiffFile.fromJson).toList(),
       createdAt: _asInt(json['createdAt']),
       updatedAt: _asInt(json['updatedAt']),
+      resolvedAt: _asInt(json['resolvedAt']),
+      responseComment: json['responseComment']?.toString(),
+      responseAction: json['responseAction']?.toString(),
+      truncated: _asBool(json['truncated']),
     );
   }
 }
@@ -607,6 +625,8 @@ class HubDiffFile {
     required this.additions,
     required this.deletions,
     required this.patch,
+    this.truncated = false,
+    this.originalLength,
   });
 
   final String path;
@@ -614,6 +634,8 @@ class HubDiffFile {
   final int additions;
   final int deletions;
   final String patch;
+  final bool truncated;
+  final int? originalLength;
 
   factory HubDiffFile.fromJson(Map<String, dynamic> json) {
     return HubDiffFile(
@@ -622,6 +644,8 @@ class HubDiffFile {
       additions: _asInt(json['additions']) ?? 0,
       deletions: _asInt(json['deletions']) ?? 0,
       patch: json['patch']?.toString() ?? '',
+      truncated: _asBool(json['truncated']),
+      originalLength: _asInt(json['originalLength']),
     );
   }
 }
