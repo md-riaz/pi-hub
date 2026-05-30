@@ -356,9 +356,22 @@ function getLocalAddresses(): string[] {
 }
 
 function firewallHint(config: PiHubConfig): string {
+	const port = config.port;
+	const platform = process.platform;
+
+	let cmd: string;
+	if (platform === "win32") {
+		cmd = `netsh advfirewall firewall add rule name="Pi Hub TCP ${port}" dir=in action=allow protocol=TCP localport=${port}`;
+	} else if (platform === "darwin") {
+		cmd = `echo 'pass in proto tcp from any to any port ${port}' | sudo pfctl -f -`;
+	} else {
+		// Linux and others
+		cmd = `sudo ufw allow ${port}/tcp`;
+	}
+
 	return [
-		"Run this once in Administrator PowerShell if phone cannot connect:",
-		`New-NetFirewallRule -DisplayName "Pi Hub TCP ${config.port}" -Direction Inbound -Action Allow -Protocol TCP -LocalPort ${config.port}`,
+		`Run this once to allow inbound TCP ${port}:`,
+		cmd,
 		"",
 		"If this is a VPS/cloud host, also allow the same TCP port in the provider firewall/security group.",
 	].join("\n");
