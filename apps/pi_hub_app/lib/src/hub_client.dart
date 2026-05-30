@@ -28,6 +28,38 @@ class AgentCreateRequest {
   }
 }
 
+class PushDeviceRegistration {
+  PushDeviceRegistration({
+    required this.deviceId,
+    required this.platform,
+    required this.provider,
+    required this.token,
+    this.enabled = true,
+    this.scopes = const ['critical', 'approval', 'diff_review'],
+    this.label = '',
+  });
+
+  final String deviceId;
+  final String platform;
+  final String provider;
+  final String token;
+  final bool enabled;
+  final List<String> scopes;
+  final String label;
+
+  Map<String, Object?> toJson() {
+    return {
+      'deviceId': deviceId,
+      'platform': platform,
+      'provider': provider,
+      if (token.trim().isNotEmpty) 'token': token.trim(),
+      'enabled': enabled,
+      'scopes': scopes,
+      if (label.trim().isNotEmpty) 'label': label.trim(),
+    };
+  }
+}
+
 class AgentCreateResult {
   AgentCreateResult({
     required this.status,
@@ -227,6 +259,28 @@ class HubClient {
     }
   }
 
+  Future<HubPushDevice> registerPushDevice(
+    PushDeviceRegistration registration,
+  ) async {
+    final data = await _postJson(
+      '/api/v2/push/devices',
+      registration.toJson(),
+    );
+    final device = data['pushDevice'];
+    if (device is Map) return HubPushDevice.fromJson(_stringKeyMap(device));
+    throw Exception('Invalid push device response');
+  }
+
+  Future<HubPushDevice> disablePushDevice(String deviceId) async {
+    final data = await _postJson('/api/v2/push/devices', {
+      'action': 'disable',
+      'deviceId': deviceId,
+    });
+    final device = data['pushDevice'];
+    if (device is Map) return HubPushDevice.fromJson(_stringKeyMap(device));
+    throw Exception('Invalid push device response');
+  }
+
   Future<AgentCreateResult> createAgent(AgentCreateRequest requestBody) async {
     final client = HttpClient();
     try {
@@ -325,6 +379,7 @@ HubSnapshot _upsertInboxItemInSnapshot(
     commands: snapshot.commands,
     approvals: snapshot.approvals,
     diffReviews: snapshot.diffReviews,
+    pushDevices: snapshot.pushDevices,
     auditEvents: snapshot.auditEvents,
     auditSummary: snapshot.auditSummary,
   );
@@ -353,6 +408,7 @@ HubSnapshot _upsertDiffReviewInSnapshot(
     commands: snapshot.commands,
     approvals: snapshot.approvals,
     diffReviews: reviews,
+    pushDevices: snapshot.pushDevices,
     auditEvents: snapshot.auditEvents,
     auditSummary: snapshot.auditSummary,
   );
@@ -383,6 +439,7 @@ HubSnapshot _upsertCommandInSnapshot(HubSnapshot snapshot, HubCommand command) {
     commands: commands,
     approvals: snapshot.approvals,
     diffReviews: snapshot.diffReviews,
+    pushDevices: snapshot.pushDevices,
     auditEvents: snapshot.auditEvents,
     auditSummary: snapshot.auditSummary,
   );
@@ -407,6 +464,7 @@ HubSnapshot _upsertApprovalInSnapshot(
     commands: snapshot.commands,
     approvals: approvals,
     diffReviews: snapshot.diffReviews,
+    pushDevices: snapshot.pushDevices,
     auditEvents: snapshot.auditEvents,
     auditSummary: snapshot.auditSummary,
   );

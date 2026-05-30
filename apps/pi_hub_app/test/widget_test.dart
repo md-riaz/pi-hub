@@ -88,6 +88,72 @@ void main() {
     expect(items.single.unread, isFalse);
   });
 
+  test('HubClient registerPushDevice calls v2 push device API', () async {
+    final previousOverrides = HttpOverrides.current;
+    HttpOverrides.global = null;
+    addTearDown(() => HttpOverrides.global = previousOverrides);
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    final requestSeen = Completer<Map<String, Object?>>();
+    server.listen((request) async {
+      final body = await utf8.decoder.bind(request).join();
+      requestSeen.complete({
+        'method': request.method,
+        'path': request.uri.path,
+        'authorization': request.headers.value(HttpHeaders.authorizationHeader),
+        'body': body,
+      });
+      request.response.headers.contentType = ContentType.json;
+      request.response.write(
+        jsonEncode({
+          'ok': true,
+          'pushDevice': {
+            'deviceId': 'android-one',
+            'platform': 'android',
+            'provider': 'ntfy',
+            'enabled': true,
+            'hasToken': true,
+            'scopes': ['critical', 'approval'],
+          },
+          'provider': {'enabled': false, 'configured': false, 'provider': 'ntfy'},
+        }),
+      );
+      await request.response.close();
+    });
+
+    final client = HubClient()
+      ..configure(
+        baseUrl: 'http://${server.address.host}:${server.port}/',
+        token: 'secret',
+      );
+    addTearDown(client.close);
+
+    final device = await client.registerPushDevice(
+      PushDeviceRegistration(
+        deviceId: 'android-one',
+        platform: 'android',
+        provider: 'ntfy',
+        token: 'topic-or-token',
+        scopes: const ['critical', 'approval'],
+      ),
+    );
+    final request = await requestSeen.future;
+
+    expect(request['method'], 'POST');
+    expect(request['path'], '/api/v2/push/devices');
+    expect(request['authorization'], 'Bearer secret');
+    expect(jsonDecode(request['body']! as String), {
+      'deviceId': 'android-one',
+      'platform': 'android',
+      'provider': 'ntfy',
+      'token': 'topic-or-token',
+      'enabled': true,
+      'scopes': ['critical', 'approval'],
+    });
+    expect(device.deviceId, 'android-one');
+    expect(device.hasToken, isTrue);
+  });
+
   test('HubClient respondToApproval calls v2 approval API', () async {
     final previousOverrides = HttpOverrides.current;
     HttpOverrides.global = null;
@@ -724,6 +790,8 @@ void main() {
           onRespondToDiffReview: (review, action, comment) async {},
           onCreateAgent: (_) async =>
               AgentCreateResult(status: 'unused', complete: true),
+          onRegisterPushDevice: () async {},
+          onDisablePushDevice: () async {},
         ),
       ),
     );
@@ -780,6 +848,8 @@ void main() {
               pid: 1234,
             );
           },
+          onRegisterPushDevice: () async {},
+          onDisablePushDevice: () async {},
         ),
       ),
     );

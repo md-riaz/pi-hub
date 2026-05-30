@@ -10,6 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.8
+  # Push stays provider-neutral/local: app registers device via hub API; server may dispatch via ntfy when configured.
 
 dev_dependencies:
   flutter_test:

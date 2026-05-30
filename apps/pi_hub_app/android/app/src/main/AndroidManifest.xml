@@ -1,5 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- No FCM service needed: optional external push is hub-side ntfy/webhook style and disabled by default. -->
     <application
         android:label="Pi Hub"
         android:name="${applicationName}"

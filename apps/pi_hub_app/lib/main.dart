@@ -46,6 +46,7 @@ class _HubHomePageState extends State<HubHomePage> {
   final TextEditingController _sendController = TextEditingController();
   final TextEditingController _modelFilterController = TextEditingController();
   final HubClient _client = HubClient();
+  final String _localPushDeviceId = 'pi-hub-local-android';
 
   HubSnapshot? _snapshot;
   StreamSubscription<HubSnapshot>? _subscription;
@@ -223,6 +224,47 @@ class _HubHomePageState extends State<HubHomePage> {
     });
   }
 
+  Future<void> _registerLocalPushDevice() async {
+    try {
+      final device = await _client.registerPushDevice(
+        PushDeviceRegistration(
+          deviceId: _localPushDeviceId,
+          platform: 'android',
+          provider: 'ntfy',
+          token: '',
+          scopes: const ['critical', 'approval', 'diff_review'],
+          label: 'Pi Hub Android app',
+        ),
+      );
+      if (!mounted || _snapshot == null) return;
+      setState(() => _snapshot = _upsertPushDevice(_snapshot!, device));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Registered push device ${device.deviceId}')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Push registration failed: $error')));
+    }
+  }
+
+  Future<void> _disableLocalPushDevice() async {
+    try {
+      final device = await _client.disablePushDevice(_localPushDeviceId);
+      if (!mounted || _snapshot == null) return;
+      setState(() => _snapshot = _upsertPushDevice(_snapshot!, device));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Disabled push device ${device.deviceId}')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Push disable failed: $error')));
+    }
+  }
+
   HubSnapshot _upsertDiffReview(HubSnapshot snapshot, HubDiffReview review) {
     final diffReviews = [...snapshot.diffReviews];
     final index = diffReviews.indexWhere((current) => current.id == review.id);
@@ -243,6 +285,7 @@ class _HubHomePageState extends State<HubHomePage> {
       commands: snapshot.commands,
       approvals: snapshot.approvals,
       diffReviews: diffReviews,
+      pushDevices: snapshot.pushDevices,
       auditEvents: snapshot.auditEvents,
       auditSummary: snapshot.auditSummary,
     );
@@ -277,6 +320,7 @@ class _HubHomePageState extends State<HubHomePage> {
       commands: snapshot.commands,
       approvals: snapshot.approvals,
       diffReviews: snapshot.diffReviews,
+      pushDevices: snapshot.pushDevices,
       auditEvents: snapshot.auditEvents,
       auditSummary: snapshot.auditSummary,
     );
@@ -314,6 +358,30 @@ class _HubHomePageState extends State<HubHomePage> {
       commands: snapshot.commands,
       approvals: approvals,
       diffReviews: snapshot.diffReviews,
+      pushDevices: snapshot.pushDevices,
+      auditEvents: snapshot.auditEvents,
+      auditSummary: snapshot.auditSummary,
+    );
+  }
+
+  HubSnapshot _upsertPushDevice(HubSnapshot snapshot, HubPushDevice device) {
+    final pushDevices = [...snapshot.pushDevices];
+    final index = pushDevices.indexWhere(
+      (current) => current.deviceId == device.deviceId,
+    );
+    if (index >= 0) {
+      pushDevices[index] = device;
+    } else {
+      pushDevices.add(device);
+    }
+    return HubSnapshot(
+      server: snapshot.server,
+      sessions: snapshot.sessions,
+      inboxItems: snapshot.inboxItems,
+      commands: snapshot.commands,
+      approvals: snapshot.approvals,
+      diffReviews: snapshot.diffReviews,
+      pushDevices: pushDevices,
       auditEvents: snapshot.auditEvents,
       auditSummary: snapshot.auditSummary,
     );
@@ -341,6 +409,8 @@ class _HubHomePageState extends State<HubHomePage> {
       onApprovalResponse: _respondToApproval,
       onRespondToDiffReview: _respondToDiffReview,
       onCreateAgent: _client.createAgent,
+      onRegisterPushDevice: _registerLocalPushDevice,
+      onDisablePushDevice: _disableLocalPushDevice,
     );
   }
 }

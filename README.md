@@ -157,6 +157,18 @@ Typical config:
   "historyLimit": 500,
   "autoStartServer": true,
   "pollIntervalMs": 1500,
+  "pushDeviceLimit": 100,
+  "push": {
+    "enabled": false,
+    "provider": "ntfy",
+    "defaultScopes": ["critical", "approval", "diff_review", "command_failure", "stale", "offline"],
+    "ntfy": {
+      "serverUrl": "https://ntfy.sh",
+      "topic": "",
+      "token": "",
+      "priority": 4
+    }
+  },
   "agentCreation": {
     "enabled": false,
     "piCommand": "pi",
@@ -176,6 +188,14 @@ Fields:
 - `historyLimit`: max in-memory transcript items per session.
 - `autoStartServer`: extension starts hub server automatically.
 - `pollIntervalMs`: Pi session command polling interval.
+- `pushDeviceLimit`: max in-memory push device registrations.
+- `push.enabled`: external push dispatch switch. Default is `false`; in-app SSE banners still work.
+- `push.provider`: external push provider. Current low-friction implementation is `ntfy`.
+- `push.defaultScopes`: default notification scopes for new devices.
+- `push.ntfy.serverUrl`: ntfy server URL, e.g. `https://ntfy.sh` or a self-hosted URL.
+- `push.ntfy.topic`: server default ntfy topic. Leave blank to keep provider unconfigured/disabled.
+- `push.ntfy.token`: optional ntfy access token; keep it out of git.
+- `push.ntfy.priority`: ntfy priority `1`-`5`.
 - `agentCreation.enabled`: enable phone/API agent creation. Default is `false`.
 - `agentCreation.piCommand`: fixed executable to spawn. App cannot override it.
 - `agentCreation.workspaceRoots`: allowlist of parent directories where creation may start.
@@ -203,6 +223,29 @@ Example minimal allowlist:
 ```
 
 Use the app's **Create agent** action only on trusted LAN/Tailscale networks. Each accepted, rejected, succeeded, or failed create attempt is added to the in-memory audit ring in snapshots.
+
+### Optional ntfy push notifications
+
+Push is provider-neutral at the device registry layer and disabled by default. The Android app can register a local device record with scopes; the server never exposes the provider token/topic in snapshots (`hasToken` only). External sends happen only when `push.enabled` is true and the configured provider is ready. Connected apps still receive in-app notifications over SSE without any push provider.
+
+Minimal ntfy setup:
+
+```json
+{
+  "push": {
+    "enabled": true,
+    "provider": "ntfy",
+    "ntfy": {
+      "serverUrl": "https://ntfy.sh",
+      "topic": "your-private-topic",
+      "token": "",
+      "priority": 4
+    }
+  }
+}
+```
+
+Use a private/self-hosted ntfy topic for sensitive hub notifications. A manual smoke is to register the app from the bell menu, create a critical/approval inbox item, and confirm a message arrives in an ntfy subscriber for the topic.
 
 ## Manual server run
 
@@ -232,13 +275,15 @@ All API routes except `/` require bearer token (`Authorization: Bearer <token>`)
 - `POST /api/send` — queue user prompt.
 - `POST /api/control` — queue `abort`, `compact`, `set_model`, or `shutdown`.
 - `GET /api/poll` — Pi session polls queued commands.
+- `GET /api/v2/push/devices` — list public push device records and provider status.
+- `POST /api/v2/push/devices` — register/update a provider-neutral push device, or disable with `{ "action": "disable", "deviceId": "..." }`.
 - `POST /api/v2/agents/create` — guarded agent creation with `cwd`, optional `name`, `model`, and `initialPrompt`; disabled by default and restricted to `agentCreation.workspaceRoots`.
 
 ## Security notes
 
 Pi Hub is built for trusted LAN/Tailscale use. Do not expose it directly to public internet. Before public exposure, add HTTPS, stronger auth, token rotation, and rate limiting.
 
-Keep `~/.pi/agent/pi-hub/config.json` private because it contains the bearer token. If `agentCreation.enabled` is true, bearer-token access can start new local processes under allowlisted workspace roots; treat it like remote code-start permission and keep the allowlist narrow.
+Keep `~/.pi/agent/pi-hub/config.json` private because it contains the bearer token and may contain push provider credentials. If `agentCreation.enabled` is true, bearer-token access can start new local processes under allowlisted workspace roots; treat it like remote code-start permission and keep the allowlist narrow.
 
 ## Troubleshooting
 

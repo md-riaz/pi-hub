@@ -63,7 +63,17 @@ Fields:
       "approvals": false,
       "diffReviews": false,
       "agentCreation": false,
-      "pushDevices": false
+      "pushDevices": true,
+      "pushNotifications": {
+        "enabled": false,
+        "configured": false,
+        "provider": "ntfy",
+        "ntfy": {
+          "serverUrl": "https://ntfy.sh",
+          "topicConfigured": false,
+          "tokenConfigured": false
+        }
+      }
     }
   },
   "sessions": []
@@ -190,15 +200,32 @@ Provider-neutral device registration does not send notifications unless a provid
 {
   "deviceId": "android-demo-device",
   "platform": "android",
-  "provider": "fcm",
-  "token": "provider-token-not-returned-in-snapshot",
+  "provider": "ntfy",
+  "token": "provider-token-or-topic-not-returned-in-snapshot",
   "enabled": true,
   "scopes": ["critical", "approval", "diff_review"],
   "updatedAt": 1770000000000
 }
 ```
 
-Snapshots must not expose provider tokens.
+`POST /api/v2/push/devices` registers or updates by `deviceId`. Send `{ "action": "disable", "deviceId": "android-demo-device" }` to disable. `GET /api/v2/push/devices` returns public records only:
+
+```json
+{
+  "deviceId": "android-demo-device",
+  "platform": "android",
+  "provider": "ntfy",
+  "enabled": true,
+  "scopes": ["critical", "approval", "diff_review"],
+  "label": "Pi Hub Android app",
+  "createdAt": 1770000000000,
+  "updatedAt": 1770000000000,
+  "disabledAt": null,
+  "hasToken": true
+}
+```
+
+Snapshots must not expose provider tokens. `server.capabilities.pushNotifications` reports whether a provider is enabled/configured. Current low-friction provider is `ntfy`; dispatch stays disabled unless `push.enabled=true`, `push.provider="ntfy"`, and an ntfy topic (server default or device token/topic) exist in config.
 
 ## Agent creation
 

@@ -14,6 +14,7 @@ void main() {
     expect(snapshot.server?.capabilities.health, isTrue);
     expect(snapshot.server?.capabilities.inbox, isTrue);
     expect(snapshot.server?.capabilities.agentCreation, isFalse);
+    expect(snapshot.server?.capabilities.pushDevices, isFalse);
     expect(snapshot.sessions, hasLength(20));
     expect(
       snapshot.sessions.map((session) => session.health?.state).toSet(),
@@ -45,7 +46,16 @@ void main() {
     final snapshot = HubSnapshot.fromJson({
       'server': {
         'schemaVersion': '2',
-        'capabilities': {'health': 'true', 'mystery': true},
+        'capabilities': {
+          'health': 'true',
+          'pushDevices': true,
+          'pushNotifications': {
+            'enabled': false,
+            'configured': true,
+            'provider': 'ntfy',
+          },
+          'mystery': true,
+        },
         'unused': {'nested': true},
       },
       'sessions': [
@@ -97,12 +107,27 @@ void main() {
           ],
         },
       ],
+      'pushDevices': [
+        {
+          'deviceId': 'android-one',
+          'platform': 'android',
+          'provider': 'ntfy',
+          'enabled': true,
+          'hasToken': true,
+          'token': 'not parsed as model field',
+          'scopes': ['critical', 'approval'],
+        },
+      ],
       'auditSummary': {'totalCount': '9', 'recentCount': 2},
     });
 
     final session = snapshot.sessions.single;
     expect(snapshot.server?.schemaVersion, 2);
     expect(snapshot.server?.capabilities.health, isTrue);
+    expect(snapshot.server?.capabilities.pushDevices, isTrue);
+    expect(snapshot.server?.capabilities.pushNotifications.provider, 'ntfy');
+    expect(snapshot.server?.capabilities.pushNotifications.enabled, isFalse);
+    expect(snapshot.server?.capabilities.pushNotifications.configured, isTrue);
     expect(session.health?.needsAttention, isTrue);
     expect(session.health?.attentionReasons, ['approval_pending', '7']);
     expect(session.health?.runningToolCount, 2);
@@ -113,6 +138,9 @@ void main() {
     expect(snapshot.commands.single.isPending, isTrue);
     expect(snapshot.approvals.single.pending, isTrue);
     expect(snapshot.diffReviews.single.files.single.additions, 3);
+    expect(snapshot.pushDevices.single.deviceId, 'android-one');
+    expect(snapshot.pushDevices.single.hasToken, isTrue);
+    expect(snapshot.pushDevices.single.scopes, ['critical', 'approval']);
     expect(snapshot.auditSummary.totalCount, 9);
   });
 }

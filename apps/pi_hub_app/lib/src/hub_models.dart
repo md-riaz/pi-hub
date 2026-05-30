@@ -6,6 +6,7 @@ class HubSnapshot {
     this.commands = const [],
     this.approvals = const [],
     this.diffReviews = const [],
+    this.pushDevices = const [],
     this.auditEvents = const [],
     AuditSummary? auditSummary,
   }) : auditSummary = auditSummary ?? AuditSummary.fromEvents(auditEvents);
@@ -16,6 +17,7 @@ class HubSnapshot {
   final List<HubCommand> commands;
   final List<HubApprovalRequest> approvals;
   final List<HubDiffReview> diffReviews;
+  final List<HubPushDevice> pushDevices;
   final List<HubAuditEvent> auditEvents;
   final AuditSummary auditSummary;
 
@@ -60,6 +62,9 @@ class HubSnapshot {
       diffReviews: _mapList(
         json['diffReviews'],
       ).map(HubDiffReview.fromJson).toList(),
+      pushDevices: _mapList(
+        json['pushDevices'],
+      ).map(HubPushDevice.fromJson).toList(),
       auditEvents: auditEvents,
       auditSummary:
           _optionalMap(json['auditSummary'], AuditSummary.fromJson) ??
@@ -97,6 +102,7 @@ class HubSnapshot {
       commands: commands,
       approvals: approvals,
       diffReviews: diffReviews,
+      pushDevices: pushDevices,
       auditEvents: auditEvents,
       auditSummary: auditSummary,
     );
@@ -153,6 +159,7 @@ class HubServerCapabilities {
     required this.diffReviews,
     required this.agentCreation,
     required this.pushDevices,
+    required this.pushNotifications,
   });
 
   final bool eventEnvelope;
@@ -163,6 +170,7 @@ class HubServerCapabilities {
   final bool diffReviews;
   final bool agentCreation;
   final bool pushDevices;
+  final HubPushProviderStatus pushNotifications;
 
   factory HubServerCapabilities.empty() => HubServerCapabilities(
     eventEnvelope: false,
@@ -173,6 +181,7 @@ class HubServerCapabilities {
     diffReviews: false,
     agentCreation: false,
     pushDevices: false,
+    pushNotifications: HubPushProviderStatus.empty(),
   );
 
   factory HubServerCapabilities.fromJson(Map<String, dynamic> json) {
@@ -185,6 +194,38 @@ class HubServerCapabilities {
       diffReviews: _asBool(json['diffReviews']),
       agentCreation: _asBool(json['agentCreation']),
       pushDevices: _asBool(json['pushDevices']),
+      pushNotifications:
+          _optionalMap(
+            json['pushNotifications'],
+            HubPushProviderStatus.fromJson,
+          ) ??
+          HubPushProviderStatus.empty(),
+    );
+  }
+}
+
+class HubPushProviderStatus {
+  HubPushProviderStatus({
+    required this.enabled,
+    required this.configured,
+    required this.provider,
+  });
+
+  final bool enabled;
+  final bool configured;
+  final String provider;
+
+  factory HubPushProviderStatus.empty() => HubPushProviderStatus(
+    enabled: false,
+    configured: false,
+    provider: '',
+  );
+
+  factory HubPushProviderStatus.fromJson(Map<String, dynamic> json) {
+    return HubPushProviderStatus(
+      enabled: _asBool(json['enabled']),
+      configured: _asBool(json['configured']),
+      provider: json['provider']?.toString() ?? '',
     );
   }
 }
@@ -650,8 +691,50 @@ class HubDiffFile {
   }
 }
 
+class HubPushDevice {
+  HubPushDevice({
+    required this.deviceId,
+    required this.platform,
+    required this.provider,
+    required this.enabled,
+    required this.scopes,
+    required this.hasToken,
+    this.label,
+    this.createdAt,
+    this.updatedAt,
+    this.disabledAt,
+  });
+
+  final String deviceId;
+  final String platform;
+  final String provider;
+  final bool enabled;
+  final List<String> scopes;
+  final bool hasToken;
+  final String? label;
+  final int? createdAt;
+  final int? updatedAt;
+  final int? disabledAt;
+
+  factory HubPushDevice.fromJson(Map<String, dynamic> json) {
+    return HubPushDevice(
+      deviceId: json['deviceId']?.toString() ?? json['id']?.toString() ?? '',
+      platform: json['platform']?.toString() ?? 'unknown',
+      provider: json['provider']?.toString() ?? '',
+      enabled: _asBool(json['enabled']),
+      scopes: _stringList(json['scopes']),
+      hasToken: _asBool(json['hasToken']),
+      label: json['label']?.toString(),
+      createdAt: _asInt(json['createdAt']),
+      updatedAt: _asInt(json['updatedAt']),
+      disabledAt: _asInt(json['disabledAt']),
+    );
+  }
+}
+
 class HubAuditEvent {
   HubAuditEvent({
+
     required this.id,
     required this.type,
     required this.timestamp,

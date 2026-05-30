@@ -32,6 +32,8 @@ class MissionControlScreen extends StatelessWidget {
     required this.onApprovalResponse,
     required this.onRespondToDiffReview,
     required this.onCreateAgent,
+    required this.onRegisterPushDevice,
+    required this.onDisablePushDevice,
   });
 
   final HubSnapshot? snapshot;
@@ -64,10 +66,14 @@ class MissionControlScreen extends StatelessWidget {
   onRespondToDiffReview;
   final Future<AgentCreateResult> Function(AgentCreateRequest request)
   onCreateAgent;
+  final Future<void> Function() onRegisterPushDevice;
+  final Future<void> Function() onDisablePushDevice;
 
   List<HubSession> get _sessions => snapshot?.sessions ?? const [];
   bool get _canCreateAgent =>
       snapshot?.server?.capabilities.agentCreation == true;
+  bool get _canRegisterPushDevice =>
+      snapshot?.server?.capabilities.pushDevices == true;
 
   Map<String, int> get _unreadBySession {
     final counts = <String, int>{};
@@ -85,6 +91,26 @@ class MissionControlScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Pi Hub'),
         actions: [
+          if (_canRegisterPushDevice)
+            PopupMenuButton<String>(
+              key: const ValueKey('push-device-menu'),
+              tooltip: 'Push device',
+              onSelected: (value) {
+                if (value == 'register') onRegisterPushDevice();
+                if (value == 'disable') onDisablePushDevice();
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'register',
+                  child: Text('Register push device'),
+                ),
+                const PopupMenuItem(
+                  value: 'disable',
+                  child: Text('Disable push device'),
+                ),
+              ],
+              icon: const Icon(Icons.notifications_active_outlined),
+            ),
           if (_canCreateAgent)
             IconButton(
               key: const ValueKey('agent-create-open'),

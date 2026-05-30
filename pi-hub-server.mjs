@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import http from "node:http";
+import https from "node:https";
 import os from "node:os";
 import fs from "node:fs";
 import path from "node:path";
@@ -29,6 +30,18 @@ const DEFAULT_CONFIG = {
   diffReviewPatchMaxChars: 12_000,
   diffReviewTotalPatchMaxChars: 60_000,
   auditLimit: 500,
+  pushDeviceLimit: 100,
+  push: {
+    enabled: false,
+    provider: "ntfy",
+    defaultScopes: ["critical", "approval", "diff_review", "command_failure", "stale", "offline"],
+    ntfy: {
+      serverUrl: "https://ntfy.sh",
+      topic: "",
+      token: "",
+      priority: 4,
+    },
+  },
   agentCreation: {
     enabled: false,
     piCommand: "pi",
@@ -59,6 +72,39 @@ function normalizeAgentCreationConfig(value = {}) {
   };
 }
 
+function normalizeScopeList(value, fallback = []) {
+  const source = Array.isArray(value) ? value : fallback;
+  const out = [];
+  for (const item of source) {
+    if (typeof item !== "string") continue;
+    const scope = item.trim().toLowerCase();
+    if (scope && !out.includes(scope)) out.push(scope);
+  }
+  return out;
+}
+
+function normalizePushConfig(value = {}) {
+  const source = isPlainObject(value) ? value : {};
+  const provider = typeof source.provider === "string" && source.provider.trim()
+    ? source.provider.trim().toLowerCase()
+    : DEFAULT_CONFIG.push.provider;
+  const ntfySource = isPlainObject(source.ntfy) ? source.ntfy : {};
+  const defaultNtfy = DEFAULT_CONFIG.push.ntfy;
+  return {
+    enabled: source.enabled === true,
+    provider,
+    defaultScopes: normalizeScopeList(source.defaultScopes, DEFAULT_CONFIG.push.defaultScopes),
+    ntfy: {
+      serverUrl: typeof ntfySource.serverUrl === "string" && ntfySource.serverUrl.trim()
+        ? ntfySource.serverUrl.trim().replace(/\/+$/, "")
+        : defaultNtfy.serverUrl,
+      topic: typeof ntfySource.topic === "string" ? ntfySource.topic.trim() : "",
+      token: typeof ntfySource.token === "string" ? ntfySource.token.trim() : "",
+      priority: Number.isFinite(Number(ntfySource.priority)) ? Number(ntfySource.priority) : defaultNtfy.priority,
+    },
+  };
+}
+
 function ensureConfig() {
   fs.mkdirSync(HUB_DIR, { recursive: true });
   let config = { ...DEFAULT_CONFIG };
@@ -81,7 +127,9 @@ function ensureConfig() {
   if (!Number.isFinite(Number(config.diffReviewPatchMaxChars))) config.diffReviewPatchMaxChars = DEFAULT_CONFIG.diffReviewPatchMaxChars;
   if (!Number.isFinite(Number(config.diffReviewTotalPatchMaxChars))) config.diffReviewTotalPatchMaxChars = DEFAULT_CONFIG.diffReviewTotalPatchMaxChars;
   if (!Number.isFinite(Number(config.auditLimit))) config.auditLimit = DEFAULT_CONFIG.auditLimit;
+  if (!Number.isFinite(Number(config.pushDeviceLimit))) config.pushDeviceLimit = DEFAULT_CONFIG.pushDeviceLimit;
   config.agentCreation = normalizeAgentCreationConfig(config.agentCreation);
+  config.push = normalizePushConfig(config.push);
   config.staleThresholdMs = Math.max(0, Number(config.staleThresholdMs));
   config.commandTimeoutMs = Math.max(1000, Number(config.commandTimeoutMs));
   config.commandHistoryLimit = Math.max(1, Number(config.commandHistoryLimit));
@@ -92,6 +140,8 @@ function ensureConfig() {
   config.diffReviewPatchMaxChars = Math.max(256, Number(config.diffReviewPatchMaxChars));
   config.diffReviewTotalPatchMaxChars = Math.max(256, Number(config.diffReviewTotalPatchMaxChars));
   config.auditLimit = Math.max(1, Number(config.auditLimit));
+  config.pushDeviceLimit = Math.max(1, Number(config.pushDeviceLimit));
+  config.push.ntfy.priority = Math.max(1, Math.min(5, Number(config.push.ntfy.priority)));
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
   return config;
 }
@@ -104,6 +154,7 @@ const inboxItems = new Map();
 const inboxDedupe = new Map();
 const approvals = new Map();
 const diffReviews = new Map();
+const pushDevices = new Map();
 const auditEvents = [];
 const watchers = new Set();
 const PENDING_COMMAND_STATUSES = new Set(["queued", "delivered"]);
@@ -179,6 +230,23 @@ function publicInboxItemsForSession(sessionId) {
     .map(publicInboxItem);
 }
 
+function pushProviderStatus() {
+  const provider = config.push.provider;
+  const ntfyReady = provider === "ntfy" && Boolean(config.push.ntfy.serverUrl && config.push.ntfy.topic);
+  return {
+    enabled: config.push.enabled === true && ntfyReady,
+    configured: ntfyReady,
+    provider,
+    defaultScopes: config.push.defaultScopes,
+    ntfy: {
+      configured: ntfyReady,
+      serverUrl: config.push.ntfy.serverUrl,
+      topicConfigured: Boolean(config.push.ntfy.topic),
+      tokenConfigured: Boolean(config.push.ntfy.token),
+    },
+  };
+}
+
 function serverCapabilities() {
   return {
     schemaVersion: 2,
@@ -189,7 +257,8 @@ function serverCapabilities() {
     approvals: true,
     diffReviews: true,
     agentCreation: config.agentCreation.enabled,
-    pushDevices: false,
+    pushDevices: true,
+    pushNotifications: pushProviderStatus(),
   };
 }
 
@@ -212,6 +281,168 @@ function publicInboxItems() {
   return Array.from(inboxItems.values())
     .sort((a, b) => Number(b.updatedAt || b.createdAt || 0) - Number(a.updatedAt || a.createdAt || 0))
     .map(publicInboxItem);
+}
+
+function pushScopeFromInboxType(type, severity) {
+  if (severity === "critical") return "critical";
+  if (type === "approval") return "approval";
+  if (type === "diff_review") return "diff_review";
+  if (type === "command_failure") return "command_failure";
+  if (type === "stale") return "stale";
+  if (type === "offline") return "offline";
+  return "inbox";
+}
+
+function publicPushDevice(device) {
+  return {
+    deviceId: device.deviceId,
+    platform: device.platform,
+    provider: device.provider,
+    enabled: device.enabled,
+    scopes: Array.isArray(device.scopes) ? device.scopes : [],
+    label: device.label || null,
+    createdAt: device.createdAt,
+    updatedAt: device.updatedAt,
+    disabledAt: device.disabledAt || null,
+    hasToken: Boolean(device.token),
+  };
+}
+
+function publicPushDevices() {
+  return Array.from(pushDevices.values())
+    .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))
+    .map(publicPushDevice);
+}
+
+function normalizeDeviceId(value) {
+  return typeof value === "string" ? value.trim().slice(0, 160) : "";
+}
+
+function normalizePushProvider(value) {
+  const provider = typeof value === "string" && value.trim() ? value.trim().toLowerCase() : config.push.provider;
+  return ["ntfy", "webhook", "fcm"].includes(provider) ? provider : config.push.provider;
+}
+
+function sanitizePushDeviceInput(input = {}) {
+  const deviceId = normalizeDeviceId(input.deviceId || input.id);
+  if (!deviceId) throw new Error("deviceId required");
+  const provider = normalizePushProvider(input.provider);
+  const existing = pushDevices.get(deviceId);
+  const token = typeof input.token === "string" ? input.token.trim() : typeof input.topic === "string" ? input.topic.trim() : undefined;
+  return {
+    deviceId,
+    platform: typeof input.platform === "string" && input.platform.trim() ? input.platform.trim().toLowerCase().slice(0, 40) : existing?.platform || "unknown",
+    provider,
+    token: token === undefined ? existing?.token || "" : token.slice(0, 4000),
+    enabled: input.enabled === undefined ? existing?.enabled ?? true : input.enabled === true,
+    scopes: normalizeScopeList(input.scopes, existing?.scopes || config.push.defaultScopes),
+    label: typeof input.label === "string" ? input.label.trim().slice(0, 120) : existing?.label || "",
+  };
+}
+
+function trimPushDevices() {
+  if (pushDevices.size <= Number(config.pushDeviceLimit)) return;
+  const oldest = Array.from(pushDevices.values()).sort((a, b) => Number(a.updatedAt || 0) - Number(b.updatedAt || 0));
+  for (const device of oldest) {
+    if (pushDevices.size <= Number(config.pushDeviceLimit)) break;
+    if (!device.enabled) pushDevices.delete(device.deviceId);
+  }
+  for (const device of oldest) {
+    if (pushDevices.size <= Number(config.pushDeviceLimit)) break;
+    pushDevices.delete(device.deviceId);
+  }
+}
+
+function upsertPushDevice(input = {}) {
+  const next = sanitizePushDeviceInput(input);
+  const now = Date.now();
+  const existing = pushDevices.get(next.deviceId);
+  const device = {
+    ...existing,
+    ...next,
+    createdAt: existing?.createdAt || now,
+    updatedAt: now,
+    disabledAt: next.enabled ? null : now,
+  };
+  pushDevices.set(device.deviceId, device);
+  trimPushDevices();
+  broadcast({ type: "push.device.updated", pushDevice: publicPushDevice(device) });
+  return device;
+}
+
+function isPushProviderReadyForDevice(device) {
+  if (!config.push.enabled) return false;
+  if (device.provider !== config.push.provider) return false;
+  if (device.provider === "ntfy") return Boolean(config.push.ntfy.serverUrl && (device.token || config.push.ntfy.topic));
+  return false;
+}
+
+function shouldSendPushForScope(device, scope) {
+  if (!device.enabled) return false;
+  if (!isPushProviderReadyForDevice(device)) return false;
+  const scopes = Array.isArray(device.scopes) ? device.scopes : [];
+  return scopes.includes(scope) || scopes.includes("all");
+}
+
+function dispatchPushForInboxItem(item) {
+  if (!item || item.readAt) return;
+  const scope = pushScopeFromInboxType(item.type, item.severity);
+  for (const device of pushDevices.values()) {
+    if (!shouldSendPushForScope(device, scope)) continue;
+    void sendNtfyNotification(device, item, scope);
+  }
+}
+
+function sendNtfyNotification(device, item, scope) {
+  const base = config.push.ntfy.serverUrl;
+  const topic = encodeURIComponent(device.token || config.push.ntfy.topic);
+  let target;
+  try {
+    target = new URL(`${base}/${topic}`);
+  } catch {
+    return Promise.resolve(false);
+  }
+  const body = `${item.title}\n${item.body || ""}`.trim();
+  const client = target.protocol === "http:" ? http : https;
+  return new Promise(resolve => {
+    const request = client.request(target, {
+      method: "POST",
+      headers: {
+        "content-type": "text/plain; charset=utf-8",
+        "title": item.title,
+        "priority": String(config.push.ntfy.priority),
+        "tags": scope,
+        ...(config.push.ntfy.token ? { authorization: `Bearer ${config.push.ntfy.token}` } : {}),
+      },
+      timeout: 5000,
+    }, response => {
+      response.resume();
+      response.on("end", () => {
+        const ok = response.statusCode >= 200 && response.statusCode < 300;
+        if (!ok) recordAudit("push.send.failed", `ntfy push failed with ${response.statusCode}`, { provider: "ntfy", deviceId: device.deviceId, statusCode: response.statusCode, inboxId: item.id });
+        resolve(ok);
+      });
+    });
+    request.on("timeout", () => request.destroy(new Error("ntfy push timed out")));
+    request.on("error", error => {
+      recordAudit("push.send.failed", `ntfy push failed: ${error.message}`, { provider: "ntfy", deviceId: device.deviceId, inboxId: item.id });
+      resolve(false);
+    });
+    request.end(body);
+  });
+}
+
+function disablePushDevice(deviceId) {
+  const id = normalizeDeviceId(deviceId);
+  if (!id) throw new Error("deviceId required");
+  const existing = pushDevices.get(id);
+  if (!existing) return undefined;
+  existing.enabled = false;
+  existing.disabledAt = Date.now();
+  existing.updatedAt = existing.disabledAt;
+  pushDevices.set(id, existing);
+  broadcast({ type: "push.device.updated", pushDevice: publicPushDevice(existing) });
+  return existing;
 }
 
 function publicAuditEvent(event) {
@@ -284,6 +515,7 @@ function snapshot() {
     inboxItems: publicInboxItems(),
     approvals: publicApprovals(),
     diffReviews: publicDiffReviews(),
+    pushDevices: publicPushDevices(),
     auditEvents: publicAuditEvents(),
     auditSummary: auditSummary(),
   };
@@ -643,7 +875,10 @@ function upsertInboxItem(input = {}) {
   inboxItems.set(item.id, item);
   inboxDedupe.set(key, item.id);
   trimInboxItems();
-  if (changed) broadcast({ type: "inbox.updated", inboxItem: publicInboxItem(item) });
+  if (changed) {
+    broadcast({ type: "inbox.updated", inboxItem: publicInboxItem(item) });
+    dispatchPushForInboxItem(item);
+  }
   return item;
 }
 
@@ -761,21 +996,6 @@ function createHealthInboxForSession(session) {
 
 function refreshAttentionInboxItems() {
   for (const session of sessions.values()) createHealthInboxForSession(session);
-}
-
-function createActionInbox(event, kind, defaults) {
-  const payload = event.payload || {};
-  const record = payload[kind] && typeof payload[kind] === "object" ? payload[kind] : payload;
-  const id = String(record.id || payload[`${kind}Id`] || event.id);
-  upsertInboxItem({
-    sessionId: event.sessionId,
-    type: defaults.type,
-    severity: String(record.severity || "warning"),
-    title: String(record.title || defaults.title),
-    body: String(record.body || record.summary || defaults.body(event.sessionId, record)),
-    actionRef: { kind: defaults.refKind, id },
-    dedupeKey: `${event.sessionId || "global"}:${defaults.type}:${id}`,
-  });
 }
 
 function processInboxForEvent(event, session) {
@@ -1532,6 +1752,23 @@ const server = http.createServer(async (req, res) => {
       if (!ids.length) throw new Error("ids required");
       const updated = markInboxItemsRead(ids);
       sendJson(res, 200, { ok: true, inboxItems: updated.map(publicInboxItem) });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/v2/push/devices") {
+      sendJson(res, 200, { ok: true, pushDevices: publicPushDevices(), provider: pushProviderStatus() });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/v2/push/devices") {
+      const body = await readBody(req);
+      const action = String(body.action || "register").trim().toLowerCase();
+      const device = action === "disable" ? disablePushDevice(body.deviceId || body.id) : upsertPushDevice(body);
+      if (!device) {
+        sendJson(res, 404, { ok: false, error: "push device not found" });
+        return;
+      }
+      sendJson(res, 200, { ok: true, pushDevice: publicPushDevice(device), provider: pushProviderStatus() });
       return;
     }
 

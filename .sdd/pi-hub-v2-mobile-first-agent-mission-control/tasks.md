@@ -180,7 +180,7 @@ Each task uses:
   - Evidence: Widget test hidden when disabled and submit path when enabled; `flutter analyze && flutter test`.
   - Review estimate: ~320 changed lines, 50 min.
 
-- [ ] T20 — Add provider-neutral notification device registry
+- [x] T20 — Add provider-neutral notification device registry
   - Files:
     - `pi-hub-server.mjs`
     - `apps/pi_hub_app/lib/src/hub_models.dart`
@@ -189,7 +189,7 @@ Each task uses:
   - Evidence: `node --check`; smoke register/update/disable device; snapshot excludes secret token values.
   - Review estimate: ~280 changed lines, 45 min.
 
-- [ ] T21 — Add optional push provider integration
+- [x] T21 — Add optional push provider integration
   - Files:
     - `pi-hub-server.mjs`
     - `apps/pi_hub_app/pubspec.yaml`
