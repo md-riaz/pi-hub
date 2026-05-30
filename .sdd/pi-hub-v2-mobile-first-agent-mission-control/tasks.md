@@ -36,14 +36,14 @@ Each task uses:
   - Evidence: `node --check pi-hub-server.mjs`; snapshot shows health for online/offline/stale/tool-error fixture sessions.
   - Review estimate: ~240 changed lines, 35 min.
 
-- [ ] T04 — Enrich extension presence and command result events
+- [x] T04 — Enrich extension presence and command result events
   - Files:
     - `pi-hub.ts`
   - Detail: Include protocol/client version in register/presence. When commands are polled, emit result/ack events with command id, type, applied boolean, and error when action fails or target model missing. Keep existing `command_received` behavior.
   - Evidence: Pi extension smoke run; server receives command result events; no regression for prompt/abort/compact/model/shutdown.
   - Review estimate: ~260 changed lines, 40 min.
 
-- [ ] T05 — Split Flutter models and API client from `main.dart`
+- [x] T05 — Split Flutter models and API client from `main.dart`
   - Files:
     - `apps/pi_hub_app/lib/main.dart`
     - `apps/pi_hub_app/lib/src/hub_client.dart`

@@ -27,6 +27,10 @@ interface HubItem {
 	metadata?: Record<string, unknown>;
 }
 
+const HUB_PROTOCOL_VERSION = 2;
+const HUB_CLIENT_VERSION = "0.1.0";
+const HUB_CLIENT_NAME = "pi-hub-extension";
+
 const DEFAULT_CONFIG: PiHubConfig = {
 	enabled: true,
 	host: "0.0.0.0",
@@ -310,6 +314,14 @@ function availableModelSummaries(ctx: ExtensionContext): Array<{ id: string; nam
 	}
 }
 
+function clientMetadata() {
+	return {
+		protocolVersion: HUB_PROTOCOL_VERSION,
+		clientVersion: HUB_CLIENT_VERSION,
+		clientName: HUB_CLIENT_NAME,
+	};
+}
+
 function currentSessionInfo(ctx: ExtensionContext, config: PiHubConfig, status: string) {
 	return {
 		id: ctx.sessionManager.getSessionId(),
@@ -322,6 +334,7 @@ function currentSessionInfo(ctx: ExtensionContext, config: PiHubConfig, status: 
 		contextUsage: ctx.getContextUsage?.(),
 		availableModels: availableModelSummaries(ctx),
 		history: sessionHistory(ctx, config.historyLimit),
+		...clientMetadata(),
 	};
 }
 
@@ -379,6 +392,30 @@ export default function piHubExtension(pi: ExtensionAPI) {
 		}
 	}
 
+	async function sendCommandResult(command: any, applied: boolean, error?: unknown): Promise<void> {
+		const commandId = command?.id;
+		const type = String(command?.type || "unknown");
+		const errorMessage = error instanceof Error ? error.message : (typeof error === "string" ? error : applied ? undefined : "Command was not applied");
+		const payload: Record<string, unknown> = {
+			type: "command_received",
+			command: {
+				id: commandId,
+				type,
+				timestamp: command?.timestamp,
+				modelId: command?.modelId,
+				applied,
+			},
+			commandId,
+			commandType: type,
+			applied,
+		};
+		if (errorMessage) {
+			(payload.command as Record<string, unknown>).error = errorMessage;
+			payload.error = errorMessage;
+		}
+		await sendEvent(payload);
+	}
+
 	async function sendPresence(): Promise<void> {
 		const ctx = liveCtx();
 		if (!ctx || !serverOk) return;
@@ -391,6 +428,7 @@ export default function piHubExtension(pi: ExtensionAPI) {
 				status: currentStatus(),
 				contextUsage: ctx.getContextUsage?.(),
 				availableModels: availableModelSummaries(ctx),
+				...clientMetadata(),
 			});
 		} catch {
 			serverOk = false;
@@ -403,7 +441,7 @@ export default function piHubExtension(pi: ExtensionAPI) {
 		try {
 			await ensureServer(config);
 			serverOk = true;
-			await post(config, "/api/register", { session: { ...currentSessionInfo(ctx, config, currentStatus()), startedAt } });
+			await post(config, "/api/register", { session: { ...currentSessionInfo(ctx, config, currentStatus()), startedAt }, ...clientMetadata() });
 			setUiStatus("Hub ✓");
 		} catch (error) {
 			serverOk = false;
@@ -421,36 +459,44 @@ export default function piHubExtension(pi: ExtensionAPI) {
 			const data = await getJson(config, `/api/poll?sessionId=${encodeURIComponent(sessionId)}`);
 			const commands = Array.isArray(data?.commands) ? data.commands : [];
 			for (const command of commands) {
-				if (command?.type === "user_message" && typeof command.text === "string" && command.text.trim()) {
-					pi.sendUserMessage(command.text);
-					await sendEvent({ type: "command_received", command: { id: command.id, type: command.type, timestamp: command.timestamp } });
-					continue;
-				}
-
-				if (command?.type === "abort") {
-					ctx.abort();
-					await sendEvent({ type: "command_received", command: { id: command.id, type: command.type, timestamp: command.timestamp } });
-					continue;
-				}
-
-				if (command?.type === "compact") {
-					ctx.compact();
-					await sendEvent({ type: "command_received", command: { id: command.id, type: command.type, timestamp: command.timestamp } });
-					continue;
-				}
-
-				if (command?.type === "set_model" && typeof command.modelId === "string") {
-					const model = ctx.modelRegistry.getAvailable().find((candidate: any) => candidate.id === command.modelId);
-					if (model) {
-						await pi.setModel(model);
+				try {
+					if (command?.type === "user_message") {
+						if (typeof command.text !== "string" || !command.text.trim()) throw new Error("text required");
+						await Promise.resolve(pi.sendUserMessage(command.text));
+						await sendCommandResult(command, true);
+						continue;
 					}
-					await sendEvent({ type: "command_received", command: { id: command.id, type: command.type, timestamp: command.timestamp, modelId: command.modelId, applied: Boolean(model) } });
-					continue;
-				}
 
-				if (command?.type === "shutdown") {
-					await sendEvent({ type: "command_received", command: { id: command.id, type: command.type, timestamp: command.timestamp } });
-					ctx.shutdown();
+					if (command?.type === "abort") {
+						await Promise.resolve(ctx.abort());
+						await sendCommandResult(command, true);
+						continue;
+					}
+
+					if (command?.type === "compact") {
+						await Promise.resolve(ctx.compact());
+						await sendCommandResult(command, true);
+						continue;
+					}
+
+					if (command?.type === "set_model") {
+						if (typeof command.modelId !== "string" || !command.modelId) throw new Error("modelId required");
+						const model = ctx.modelRegistry.getAvailable().find((candidate: any) => candidate.id === command.modelId);
+						if (!model) throw new Error(`Model ${command.modelId} is not available`);
+						await Promise.resolve(pi.setModel(model));
+						await sendCommandResult(command, true);
+						continue;
+					}
+
+					if (command?.type === "shutdown") {
+						await sendCommandResult(command, true);
+						ctx.shutdown();
+						continue;
+					}
+
+					throw new Error(`Unsupported command type: ${String(command?.type || "unknown")}`);
+				} catch (error) {
+					await sendCommandResult(command, false, error);
 				}
 			}
 		} catch {
