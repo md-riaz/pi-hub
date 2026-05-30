@@ -706,10 +706,22 @@ export default function piHubExtension(pi: ExtensionAPI) {
 		void sendEvent({ type: "thinking_level_select", level: (event as any).level });
 	});
 
+	async function disconnectSession(): Promise<void> {
+		if (sessionId && serverOk) {
+			try { await post(config, "/api/unregister", { sessionId }); } catch {}
+		}
+		serverOk = false;
+		setUiStatus("Hub ✗");
+		if (presenceTimer) clearInterval(presenceTimer);
+		if (pollTimer) clearInterval(pollTimer);
+		presenceTimer = null;
+		pollTimer = null;
+	}
+
 	pi.registerCommand("hub", {
-		description: "Pi Hub dashboard bridge: /hub [status|info|start|stop]",
+		description: "Pi Hub: /hub [info|start|stop|server stop]",
 		getArgumentCompletions(prefix: string) {
-			return ["status", "info", "start", "stop"].filter((item) => item.startsWith(prefix)).map((value) => ({ value, label: value }));
+			return ["status", "info", "start", "stop", "server stop"].filter((item) => item.startsWith(prefix)).map((value) => ({ value, label: value }));
 		},
 		async handler(args, ctx) {
 			const sub = args.trim().toLowerCase();
@@ -725,23 +737,28 @@ export default function piHubExtension(pi: ExtensionAPI) {
 				return;
 			}
 			if (sub === "stop") {
+				if (!serverOk) {
+					ctx.ui.notify("This session is not connected to Pi Hub.", "warning");
+					return;
+				}
+				await disconnectSession();
+				ctx.ui.notify("Disconnected this session from Pi Hub. Server still running for other sessions.\nUse /hub start to reconnect, or /hub server stop to kill the server.", "info");
+				return;
+			}
+			if (sub === "server stop") {
 				const pid = readPid();
 				if (pid && isProcessRunning(pid)) {
+					await disconnectSession();
 					try {
 						process.kill(pid);
-						ctx.ui.notify(`Pi Hub server stopped (PID ${pid}).`, "info");
+						ctx.ui.notify(`Pi Hub server killed (PID ${pid}). All sessions disconnected.`, "info");
 					} catch (error) {
-						ctx.ui.notify(`Failed to stop server (PID ${pid}): ${error instanceof Error ? error.message : String(error)}`, "error");
+						ctx.ui.notify(`Failed to kill server (PID ${pid}): ${error instanceof Error ? error.message : String(error)}`, "error");
 					}
 				} else {
+					await disconnectSession();
 					ctx.ui.notify("Pi Hub server is not running.", "warning");
 				}
-				serverOk = false;
-				setUiStatus("Hub ✗");
-				if (presenceTimer) clearInterval(presenceTimer);
-				if (pollTimer) clearInterval(pollTimer);
-				presenceTimer = null;
-				pollTimer = null;
 				return;
 			}
 			if (sub === "info" || sub === "status" || !sub) {
@@ -756,7 +773,7 @@ export default function piHubExtension(pi: ExtensionAPI) {
 				].join("\n"), serverOk ? "info" : "warning");
 				return;
 			}
-			ctx.ui.notify("Unknown /hub command. Use /hub, /hub info, /hub start, or /hub stop.", "warning");
+			ctx.ui.notify("Unknown /hub command. Use: /hub info, /hub start, /hub stop, /hub server stop", "warning");
 		},
 	});
 }
