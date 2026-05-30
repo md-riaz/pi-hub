@@ -107,6 +107,20 @@ class HubSnapshot {
       auditSummary: auditSummary,
     );
   }
+
+  HubSnapshot removeSession(String sessionId) {
+    return HubSnapshot(
+      server: server,
+      sessions: sessions.where((s) => s.id != sessionId).toList(),
+      inboxItems: inboxItems,
+      commands: commands,
+      approvals: approvals,
+      diffReviews: diffReviews,
+      pushDevices: pushDevices,
+      auditEvents: auditEvents,
+      auditSummary: auditSummary,
+    );
+  }
 }
 
 class HubServerInfo {

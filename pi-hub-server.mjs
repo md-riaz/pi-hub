@@ -1820,9 +1820,11 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/unregister") {
       const body = await readBody(req);
       const sessionId = requireSessionId(body);
-      const event = normalizeEvent({ ...body, type: "unregister" }, sessionId, "unregister");
-      const session = applyEvent(event);
-      broadcast({ type: "session_updated", reason: "unregister", session: publicSession(session), event });
+      const session = sessions.get(sessionId);
+      const publicBefore = session ? publicSession(session) : undefined;
+      sessions.delete(sessionId);
+      commandQueues.delete(sessionId);
+      broadcast({ type: "session_removed", reason: "unregister", sessionId, session: publicBefore });
       sendJson(res, 200, { ok: true });
       return;
     }

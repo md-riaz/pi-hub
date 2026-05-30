@@ -185,6 +185,10 @@ class HubClient {
             HubSession.fromJson(data['session'] as Map<String, dynamic>),
           );
         }
+        if (data['type'] == 'session_removed' && data['sessionId'] != null) {
+          final removedId = data['sessionId'].toString();
+          snapshot = (snapshot ?? HubSnapshot.empty()).removeSession(removedId);
+        }
         if (data['inboxItem'] != null) {
           snapshot = _upsertInboxItemInSnapshot(
             snapshot ?? HubSnapshot.empty(),
