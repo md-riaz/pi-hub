@@ -253,6 +253,7 @@ class _HubHomePageState extends State<HubHomePage> {
       onShutdown: () => _runControl('shutdown'),
       onModel: _pickModel,
       onMarkInboxRead: _markInboxRead,
+      onCreateAgent: _client.createAgent,
     );
   }
 }

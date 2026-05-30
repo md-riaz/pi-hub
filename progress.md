@@ -14,10 +14,13 @@
   - memory-only history
   - full first-pass controls
 - Added controls after consultation: abort, compact, model switch, shutdown.
+- Added guarded agent creation backend disabled by default, with workspace root allowlist, shell-free spawn, `/api/v2/agents/create`, audit entries, and README risk docs.
+- Added mobile create-agent form shown only when server capability `agentCreation` is true.
 
 ## Validation
 
 - Pi extension loader loads `index.ts` and `pi-hub.ts` without errors.
 - Server smoke tested: health, register, send/poll, control/poll, snapshot availableModels.
+- Agent creation smoke tested: disabled path returns `403`; out-of-root enabled path returns `400`; enabled temp allowlist with Node harmless command in `testMode` returns success and audit entry.
 - Flutter `flutter analyze` passes.
 - Flutter `flutter test` passes.

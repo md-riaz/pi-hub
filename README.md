@@ -11,6 +11,7 @@ It gives you one local hub server, live session snapshots, conversation history,
 - Flutter Android dashboard (`apps/pi_hub_app`) for phone or emulator.
 - Live HTTP/SSE updates for session status, transcript, tools, model, context usage, and presence.
 - Command queue for sending prompts or controls back to selected Pi session.
+- Disabled-by-default guarded agent creation endpoint and mobile form for allowlisted workspace roots.
 - LAN/Tailscale-first design; protocol stays ready for a future relay.
 
 ## Repo layout
@@ -155,7 +156,14 @@ Typical config:
   "token": "generated-token",
   "historyLimit": 500,
   "autoStartServer": true,
-  "pollIntervalMs": 1500
+  "pollIntervalMs": 1500,
+  "agentCreation": {
+    "enabled": false,
+    "piCommand": "pi",
+    "workspaceRoots": [],
+    "defaultArgs": [],
+    "testMode": false
+  }
 }
 ```
 
@@ -168,8 +176,33 @@ Fields:
 - `historyLimit`: max in-memory transcript items per session.
 - `autoStartServer`: extension starts hub server automatically.
 - `pollIntervalMs`: Pi session command polling interval.
+- `agentCreation.enabled`: enable phone/API agent creation. Default is `false`.
+- `agentCreation.piCommand`: fixed executable to spawn. App cannot override it.
+- `agentCreation.workspaceRoots`: allowlist of parent directories where creation may start.
+- `agentCreation.defaultArgs`: fixed server-side args for the executable.
+- `agentCreation.testMode`: waits for the child and reports exit status; use only for validation.
 
 After config edits, restart Pi sessions and server.
+
+### Agent creation risk and setup
+
+Agent creation starts a new process on the hub host, so keep it disabled unless you trust every client with the bearer token. The server rejects requests while disabled (`403`) and rejects `cwd` outside configured `workspaceRoots` (`400`). It resolves real paths before the allowlist check and spawns `agentCreation.piCommand` with `shell: false`; no command string or args are accepted from the mobile app.
+
+Example minimal allowlist:
+
+```json
+{
+  "agentCreation": {
+    "enabled": true,
+    "piCommand": "pi",
+    "workspaceRoots": ["C:/Users/vm_user/Downloads"],
+    "defaultArgs": [],
+    "testMode": false
+  }
+}
+```
+
+Use the app's **Create agent** action only on trusted LAN/Tailscale networks. Each accepted, rejected, succeeded, or failed create attempt is added to the in-memory audit ring in snapshots.
 
 ## Manual server run
 
@@ -199,12 +232,13 @@ All API routes except `/` require bearer token (`Authorization: Bearer <token>`)
 - `POST /api/send` — queue user prompt.
 - `POST /api/control` — queue `abort`, `compact`, `set_model`, or `shutdown`.
 - `GET /api/poll` — Pi session polls queued commands.
+- `POST /api/v2/agents/create` — guarded agent creation with `cwd`, optional `name`, `model`, and `initialPrompt`; disabled by default and restricted to `agentCreation.workspaceRoots`.
 
 ## Security notes
 
 Pi Hub is built for trusted LAN/Tailscale use. Do not expose it directly to public internet. Before public exposure, add HTTPS, stronger auth, token rotation, and rate limiting.
 
-Keep `~/.pi/agent/pi-hub/config.json` private because it contains the bearer token.
+Keep `~/.pi/agent/pi-hub/config.json` private because it contains the bearer token. If `agentCreation.enabled` is true, bearer-token access can start new local processes under allowlisted workspace roots; treat it like remote code-start permission and keep the allowlist narrow.
 
 ## Troubleshooting
 

@@ -4,6 +4,66 @@ import 'dart:io';
 
 import 'hub_models.dart';
 
+class AgentCreateRequest {
+  AgentCreateRequest({
+    required this.cwd,
+    this.name = '',
+    this.model = '',
+    this.initialPrompt = '',
+  });
+
+  final String cwd;
+  final String name;
+  final String model;
+  final String initialPrompt;
+
+  Map<String, String> toJson() {
+    return {
+      'cwd': cwd.trim(),
+      if (name.trim().isNotEmpty) 'name': name.trim(),
+      if (model.trim().isNotEmpty) 'model': model.trim(),
+      if (initialPrompt.trim().isNotEmpty)
+        'initialPrompt': initialPrompt.trim(),
+    };
+  }
+}
+
+class AgentCreateResult {
+  AgentCreateResult({
+    required this.status,
+    required this.complete,
+    this.id,
+    this.pid,
+    this.error,
+  });
+
+  final String status;
+  final bool complete;
+  final String? id;
+  final int? pid;
+  final String? error;
+
+  String get summary {
+    final idPart = id == null ? '' : ' · $id';
+    final pidPart = pid == null ? '' : ' · pid $pid';
+    final errorPart = error == null ? '' : ' · $error';
+    return '$status$idPart$pidPart$errorPart';
+  }
+
+  factory AgentCreateResult.fromJson(Map<String, dynamic> json) {
+    final creation = json['creation'] is Map
+        ? _stringKeyMap(json['creation'] as Map)
+        : json;
+    return AgentCreateResult(
+      status: creation['status']?.toString() ?? 'submitted',
+      complete: json['complete'] == true,
+      id: creation['id']?.toString(),
+      pid: _intValue(creation['pid']),
+      error: creation['error']?.toString(),
+    );
+  }
+}
+
 class HubClient {
   String baseUrl = 'http://10.0.2.2:17878';
   String token = '';
@@ -98,6 +158,28 @@ class HubClient {
         for (final item in data['inboxItems'] as List)
           if (item is Map) HubInboxItem.fromJson(_stringKeyMap(item)),
       ];
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  Future<AgentCreateResult> createAgent(AgentCreateRequest requestBody) async {
+    final client = HttpClient();
+    try {
+      final request = await client.postUrl(
+        Uri.parse('$baseUrl/api/v2/agents/create'),
+      );
+      request.headers.contentType = ContentType.json;
+      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+      request.write(jsonEncode(requestBody.toJson()));
+      final response = await request.close();
+      final body = await response.transform(utf8.decoder).join();
+      if (response.statusCode != 200) {
+        throw Exception('${response.statusCode}: $body');
+      }
+      return AgentCreateResult.fromJson(
+        jsonDecode(body) as Map<String, dynamic>,
+      );
     } finally {
       client.close(force: true);
     }
@@ -263,4 +345,10 @@ int _compareCommands(HubCommand a, HubCommand b) {
 
 Map<String, dynamic> _stringKeyMap(Map value) {
   return value.map((key, value) => MapEntry(key.toString(), value));
+}
+
+int? _intValue(Object? value) {
+  if (value is num) return value.toInt();
+  if (value is String) return int.tryParse(value);
+  return null;
 }
