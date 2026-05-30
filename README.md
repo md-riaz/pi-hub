@@ -1,97 +1,89 @@
-# Pi Hub Dashboard
+# Pi Hub
 
-Pi Hub is a Pi Coding Agent extension plus Flutter Android app for watching and controlling multiple Pi sessions from a phone over LAN or Tailscale.
+Pi Hub is a local-first mission-control dashboard for Pi Coding Agent sessions. It combines a Pi extension, a small HTTP/SSE hub server, and a Flutter Android app so you can monitor and control multiple running agents from a phone on your trusted LAN or Tailscale network.
 
-It gives you one local hub server, live session snapshots, conversation history, active tool status, and remote controls for prompts, abort, compaction, model switching, and shutdown.
+> Status: early but usable. The hub is designed for private networks and should not be exposed directly to the public internet.
 
-## Features
+## What you get
 
-- Auto-starting Pi extension (`pi-hub.ts`) loaded by every Pi session.
-- Memory-only local hub server (`pi-hub-server.mjs`) with token auth.
-- Flutter Android dashboard (`apps/pi_hub_app`) for phone or emulator.
-- Live HTTP/SSE updates for session status, transcript, tools, model, context usage, and presence.
-- Command queue for sending prompts or controls back to selected Pi session.
-- Disabled-by-default guarded agent creation endpoint and mobile form for allowlisted workspace roots.
-- LAN/Tailscale-first design; protocol stays ready for a future relay.
+- Live overview of connected Pi sessions, health, model, context usage, active tools, and recent transcript entries.
+- Mobile prompt sending and controls for abort, compact, model switch, and shutdown.
+- Command lifecycle visibility beyond simple queued snackbars.
+- Inbox-style attention feed for failures, stale/offline agents, approvals, diff reviews, and other action items.
+- Optional provider-neutral push registration with an `ntfy` implementation, disabled by default.
+- Optional guarded agent creation endpoint for allowlisted workspace roots, disabled by default.
+- Memory-only hub state by default: no transcript database and no cloud dependency.
 
-## Repo layout
+## Architecture
 
 ```text
-pi-hub.ts             Pi extension loaded by Pi Coding Agent
-pi-hub-server.mjs     Central memory-only HTTP/SSE hub server
-apps/pi_hub_app       Flutter Android dashboard
-package.json          Pi package metadata and npm scripts
-plan.md               Architecture plan
-progress.md           Progress and validation notes
-TODO.md               Follow-up work
+Pi sessions
+  └─ pi-hub.ts extension
+      ├─ starts/registers with the local hub
+      ├─ streams presence, transcript, tool, and command-result events
+      └─ polls for queued mobile commands
+
+Hub host
+  └─ pi-hub-server.mjs
+      ├─ token-protected HTTP JSON API
+      ├─ SSE live stream for the mobile app
+      ├─ in-memory sessions, inbox, commands, push devices, and audit ring
+      └─ optional guarded process creation for trusted workspaces
+
+Android device
+  └─ apps/pi_hub_app
+      ├─ Flutter mission-control UI
+      ├─ live session/detail/inbox screens
+      └─ prompt, control, approval, diff-review, push, and create-agent flows
 ```
 
 ## Requirements
 
 - Pi Coding Agent `>=0.60.0`.
-- Node.js `18+` available where Pi runs.
-- Flutter/Dart for Android app development (`flutter --version`).
-- Android emulator, USB device, or physical phone on same LAN/Tailscale network.
+- Node.js `18+` on the machine running Pi sessions.
+- Flutter/Dart if you want to run or build the Android app from source.
+- Android emulator, USB-connected Android device, or phone on the same LAN/Tailscale network as the hub host.
 
-## Quick start
+## Installation
 
-### 1. Clone repo
+### 1. Clone the repository
 
 ```bash
 git clone https://github.com/md-riaz/pi-hub.git
 cd pi-hub
 ```
 
-### 2. Install Pi extension
+### 2. Install the Pi extension
 
-Install from local clone path:
-
-```bash
-pi install C:/path/to/pi-hub
-```
-
-Example for this VM path:
+From the repository root:
 
 ```bash
-pi install C:/Users/vm_user/Downloads/pi-hub
+pi install .
 ```
 
-Restart every Pi session you want to show in the dashboard. Each session loads `pi-hub.ts`, auto-starts the hub server once, and registers itself.
+If your Pi CLI requires an absolute path, pass the absolute path to your local clone instead of `.`.
 
-### 3. Start/check hub inside Pi
+Restart the Pi sessions you want to manage. Each restarted session loads `pi-hub.ts`, starts the hub server if needed, and registers with it.
+
+### 3. Check the hub from Pi
 
 Inside any Pi session:
 
 ```text
-/hub
-/hub start
 /hub info
 ```
 
-- `/hub` or `/hub info` shows server status, local URL, token, and config path.
-- `/hub start` starts the server manually if auto-start did not run.
-
-### 4. Get token
-
-Token lives in:
+Useful commands:
 
 ```text
-~/.pi/agent/pi-hub/config.json
+/hub          # show hub status
+/hub start    # start or reconnect to the hub server
+/hub info     # show URL, token location, and status
 ```
 
-PowerShell:
+## Mobile app
 
-```powershell
-Get-Content "$env:USERPROFILE\.pi\agent\pi-hub\config.json"
-```
-
-macOS/Linux shell:
-
-```bash
-cat ~/.pi/agent/pi-hub/config.json
-```
-
-### 5. Run Android dashboard
+### Run in development
 
 ```bash
 cd apps/pi_hub_app
@@ -99,16 +91,7 @@ flutter pub get
 flutter run
 ```
 
-Connect with:
-
-- Android emulator: `http://10.0.2.2:17878`
-- Physical phone: `http://<Windows-VM-IP>:17878`
-- Tailscale phone: `http://<Tailscale-IP>:17878`
-- Token: value from `~/.pi/agent/pi-hub/config.json`
-
-For physical phones, keep `host` as `0.0.0.0` in config and allow inbound Windows firewall TCP `17878` if needed.
-
-### 6. Build APK
+### Build an APK
 
 ```bash
 cd apps/pi_hub_app
@@ -121,32 +104,50 @@ APK output:
 apps/pi_hub_app/build/app/outputs/flutter-apk/app-release.apk
 ```
 
-Install that APK on phone, then enter server URL and token.
+For quick local testing you can also build a debug APK:
 
-## How to use dashboard
+```bash
+flutter build apk --debug
+```
 
-1. Open app and enter server URL + token.
-2. Tap **Connect**.
-3. Select Pi session in left list.
-4. Read transcript and active tool strip.
-5. Type prompt at bottom and tap **Send**.
-6. Use controls:
-   - **Abort**: stop current Pi work.
-   - **Compact**: trigger session compaction.
-   - **Model**: pick available model from selected session.
-   - **Shutdown**: close selected Pi session.
+## Connecting from Android
 
-Commands are queued on hub server. Pi sessions poll queue every `pollIntervalMs` (default `1500ms`).
+The app needs the hub URL and token.
 
-## Configuration
-
-Config file is created automatically:
+Token file on the hub host:
 
 ```text
 ~/.pi/agent/pi-hub/config.json
 ```
 
-Typical config:
+Common URLs:
+
+- Android emulator: `http://10.0.2.2:17878`
+- Physical phone on LAN: `http://<hub-host-lan-ip>:17878`
+- Phone over Tailscale: `http://<hub-host-tailscale-ip>:17878`
+
+For phone access, keep the server bound to `0.0.0.0` and allow inbound TCP `17878` through the hub host firewall.
+
+## Daily usage
+
+1. Start or restart your Pi sessions.
+2. Open the Android app.
+3. Enter the hub URL and token, then tap **Connect**.
+4. Select a session or attention item.
+5. Review transcript, tools, health, inbox, approvals, or diff reviews.
+6. Send prompts or run controls such as **Abort**, **Compact**, **Model**, and **Shutdown**.
+
+Commands are queued on the hub and picked up by Pi sessions during polling. The default polling interval is `1500ms`.
+
+## Configuration
+
+Pi Hub creates this config file automatically:
+
+```text
+~/.pi/agent/pi-hub/config.json
+```
+
+Example:
 
 ```json
 {
@@ -179,56 +180,23 @@ Typical config:
 }
 ```
 
-Fields:
+Key fields:
 
-- `enabled`: enable/disable extension bridge.
-- `host`: server bind host. Use `0.0.0.0` for phone access.
-- `port`: server port.
-- `token`: bearer token for app/API.
-- `historyLimit`: max in-memory transcript items per session.
-- `autoStartServer`: extension starts hub server automatically.
-- `pollIntervalMs`: Pi session command polling interval.
-- `pushDeviceLimit`: max in-memory push device registrations.
-- `push.enabled`: external push dispatch switch. Default is `false`; in-app SSE banners still work.
-- `push.provider`: external push provider. Current low-friction implementation is `ntfy`.
-- `push.defaultScopes`: default notification scopes for new devices.
-- `push.ntfy.serverUrl`: ntfy server URL, e.g. `https://ntfy.sh` or a self-hosted URL.
-- `push.ntfy.topic`: server default ntfy topic. Leave blank to keep provider unconfigured/disabled.
-- `push.ntfy.token`: optional ntfy access token; keep it out of git.
-- `push.ntfy.priority`: ntfy priority `1`-`5`.
-- `agentCreation.enabled`: enable phone/API agent creation. Default is `false`.
-- `agentCreation.piCommand`: fixed executable to spawn. App cannot override it.
-- `agentCreation.workspaceRoots`: allowlist of parent directories where creation may start.
-- `agentCreation.defaultArgs`: fixed server-side args for the executable.
-- `agentCreation.testMode`: waits for the child and reports exit status; use only for validation.
+- `enabled`: enables the extension bridge.
+- `host`: bind address. Use `0.0.0.0` for phone access on a trusted network.
+- `port`: hub server port.
+- `token`: bearer token required by the app and API.
+- `historyLimit`: maximum in-memory transcript items per session.
+- `autoStartServer`: lets the extension start the hub automatically.
+- `pollIntervalMs`: how often sessions poll for mobile commands.
+- `push.enabled`: enables external push dispatch. In-app SSE notifications work without this.
+- `agentCreation.enabled`: enables API/mobile creation of new Pi processes. Keep disabled unless you understand the risk.
 
-After config edits, restart Pi sessions and server.
+Restart Pi sessions and the hub server after changing configuration.
 
-### Agent creation risk and setup
+## Optional push notifications
 
-Agent creation starts a new process on the hub host, so keep it disabled unless you trust every client with the bearer token. The server rejects requests while disabled (`403`) and rejects `cwd` outside configured `workspaceRoots` (`400`). It resolves real paths before the allowlist check and spawns `agentCreation.piCommand` with `shell: false`; no command string or args are accepted from the mobile app.
-
-Example minimal allowlist:
-
-```json
-{
-  "agentCreation": {
-    "enabled": true,
-    "piCommand": "pi",
-    "workspaceRoots": ["C:/Users/vm_user/Downloads"],
-    "defaultArgs": [],
-    "testMode": false
-  }
-}
-```
-
-Use the app's **Create agent** action only on trusted LAN/Tailscale networks. Each accepted, rejected, succeeded, or failed create attempt is added to the in-memory audit ring in snapshots.
-
-### Optional ntfy push notifications
-
-Push is provider-neutral at the device registry layer and disabled by default. The Android app can register a local device record with scopes; the server never exposes the provider token/topic in snapshots (`hasToken` only). External sends happen only when `push.enabled` is true and the configured provider is ready. Connected apps still receive in-app notifications over SSE without any push provider.
-
-Minimal ntfy setup:
+Push is disabled by default. The current low-friction provider is [`ntfy`](https://ntfy.sh/). Configure a private or self-hosted topic before enabling it:
 
 ```json
 {
@@ -245,11 +213,38 @@ Minimal ntfy setup:
 }
 ```
 
-Use a private/self-hosted ntfy topic for sensitive hub notifications. A manual smoke is to register the app from the bell menu, create a critical/approval inbox item, and confirm a message arrives in an ntfy subscriber for the topic.
+Provider tokens/topics are not exposed in snapshots; public device records only report `hasToken`.
+
+## Optional agent creation
+
+Agent creation starts a new local process on the hub host. It is disabled by default and restricted to server-side allowlisted workspace roots.
+
+Example configuration:
+
+```json
+{
+  "agentCreation": {
+    "enabled": true,
+    "piCommand": "pi",
+    "workspaceRoots": ["/home/alice/projects"],
+    "defaultArgs": [],
+    "testMode": false
+  }
+}
+```
+
+Security model:
+
+- The app cannot choose an arbitrary executable.
+- The server launches `agentCreation.piCommand` with `shell: false`.
+- Requested working directories are resolved and must be inside `workspaceRoots`.
+- Accepted, rejected, succeeded, and failed attempts are recorded in the in-memory audit ring.
+
+Only enable this feature on trusted networks and with a narrow workspace allowlist.
 
 ## Manual server run
 
-Normally Pi extension starts server. To run manually:
+Normally the extension starts the server. To run it manually:
 
 ```bash
 npm run hub:server
@@ -263,37 +258,46 @@ curl "http://127.0.0.1:17878/api/health?token=<token>"
 
 ## API summary
 
-All API routes except `/` require bearer token (`Authorization: Bearer <token>`) or `?token=<token>`.
+All API routes except `/` require either `Authorization: Bearer <token>` or `?token=<token>`.
+
+### v1-compatible routes
 
 - `GET /api/health` — server status and local addresses.
-- `GET /api/snapshot` — full sessions snapshot.
-- `GET /api/stream` — SSE stream of snapshots/session updates.
-- `POST /api/register` — register Pi session.
-- `POST /api/unregister` — mark Pi session offline.
+- `GET /api/snapshot` — full session snapshot.
+- `GET /api/stream` — SSE snapshot/session update stream.
+- `POST /api/register` — register a Pi session.
+- `POST /api/unregister` — mark a Pi session offline.
 - `POST /api/presence` — update session status/model/context.
-- `POST /api/event` — push transcript/tool/event update.
-- `POST /api/send` — queue user prompt.
+- `POST /api/event` — push transcript, tool, and other session events.
+- `POST /api/send` — queue a user prompt.
 - `POST /api/control` — queue `abort`, `compact`, `set_model`, or `shutdown`.
-- `GET /api/poll` — Pi session polls queued commands.
+- `GET /api/poll` — Pi session command polling endpoint.
+
+### v2 routes
+
 - `GET /api/v2/push/devices` — list public push device records and provider status.
-- `POST /api/v2/push/devices` — register/update a provider-neutral push device, or disable with `{ "action": "disable", "deviceId": "..." }`.
-- `POST /api/v2/agents/create` — guarded agent creation with `cwd`, optional `name`, `model`, and `initialPrompt`; disabled by default and restricted to `agentCreation.workspaceRoots`.
+- `POST /api/v2/push/devices` — register/update/disable a push device.
+- `POST /api/v2/agents/create` — guarded agent creation for allowlisted workspace roots.
+
+See [`docs/pi-hub-v2-protocol.md`](docs/pi-hub-v2-protocol.md) for protocol notes.
 
 ## Security notes
 
-Pi Hub is built for trusted LAN/Tailscale use. Do not expose it directly to public internet. Before public exposure, add HTTPS, stronger auth, token rotation, and rate limiting.
+Pi Hub is intended for trusted LAN/Tailscale environments.
 
-Keep `~/.pi/agent/pi-hub/config.json` private because it contains the bearer token and may contain push provider credentials. If `agentCreation.enabled` is true, bearer-token access can start new local processes under allowlisted workspace roots; treat it like remote code-start permission and keep the allowlist narrow.
+Do not expose the hub directly to the public internet. Before public exposure, add HTTPS, stronger authentication, token rotation, rate limiting, and persistent audit controls.
+
+Protect `~/.pi/agent/pi-hub/config.json`; it contains the bearer token and may contain push provider credentials. If agent creation is enabled, bearer-token access can start new local processes inside configured workspace roots.
 
 ## Troubleshooting
 
-- **No sessions visible**: restart Pi sessions after `pi install`, then run `/hub start`.
-- **Phone cannot connect**: use VM LAN/Tailscale IP, keep `host: "0.0.0.0"`, and allow firewall TCP `17878`.
-- **Unauthorized**: copy fresh token from `~/.pi/agent/pi-hub/config.json`.
-- **Stale server state**: stop old Node process or remove stale `~/.pi/agent/pi-hub/server.pid`, then run `/hub start`.
+- **No sessions visible**: restart Pi sessions after installing the extension, then run `/hub start`.
+- **Phone cannot connect**: use the hub host LAN/Tailscale IP, keep `host: "0.0.0.0"`, and check firewall rules for TCP `17878`.
+- **Unauthorized**: copy the current token from `~/.pi/agent/pi-hub/config.json`.
+- **Stale server state**: stop the old Node process or remove the stale `~/.pi/agent/pi-hub/server.pid`, then run `/hub start`.
 - **Emulator cannot connect**: use `http://10.0.2.2:17878`, not `localhost`.
 
-## Development checks
+## Development
 
 ```bash
 node --check pi-hub-server.mjs

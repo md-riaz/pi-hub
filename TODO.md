@@ -3,7 +3,7 @@
 ## Pi Hub
 
 - [x] Confirm architecture with user.
-- [x] Use Windows VM local server now, keep protocol hybrid/cloud-friendly.
+- [x] Use local hub-host server now, keep protocol hybrid/cloud-friendly.
 - [x] Use Tailscale/LAN phone access with token auth.
 - [x] Keep history memory-only on central server.
 - [x] Stream Pi session conversation history and current work.

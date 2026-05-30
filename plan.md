@@ -2,8 +2,8 @@
 
 ## Decisions
 
-- Server topology: run central Pi Hub server inside Windows VM now; keep protocol HTTP/SSE so a cloud/VPS relay can be added later without replacing clients.
-- Phone access: Android connects over Tailscale or LAN to the VM on TCP `17878`, protected by bearer token from `~/.pi/agent/pi-hub/config.json`.
+- Server topology: run central Pi Hub server on the user's Pi host machine now; keep protocol HTTP/SSE so a cloud/VPS relay can be added later without replacing clients.
+- Phone access: Android connects over Tailscale or LAN to the hub host on TCP `17878`, protected by bearer token from `~/.pi/agent/pi-hub/config.json`.
 - History: memory-only on the hub server. Each live Pi session sends its recent session entries on registration and event updates while running; no server-side transcript database for now.
 - First controls: Flutter app can view sessions, send prompts, abort current work, trigger compaction, switch model, and shutdown a selected Pi session.
 - Agent creation: disabled by default; when explicitly enabled, `/api/v2/agents/create` spawns only the configured command without shell interpolation and only inside configured workspace roots.

@@ -233,7 +233,7 @@ Agent creation is disabled by default. When enabled, mobile submits a bounded re
 
 ```json
 {
-  "cwd": "C:/Users/vm_user/Downloads/project-a",
+  "cwd": "/home/alice/projects/project-a",
   "name": "project-a-reviewer",
   "model": "gpt-5-codex",
   "initialPrompt": "Review TODOs and report blockers."

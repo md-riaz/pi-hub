@@ -4,29 +4,20 @@ Feature slug: `pi-hub-v2-mobile-first-agent-mission-control`
 
 ## Code roots
 
-Observed current working tree root:
+Repository-relative implementation roots:
 
-- `C:/Users/vm_user/AppData/Local/Temp/pi-agent-dfaec010-abbb-42c-810d8bea`
-
-Explore-reported project root for user checkout:
-
-- `C:/Users/vm_user/Downloads/pi-hub`
-
-Observed code roots in current working tree:
-
-- `C:/Users/vm_user/AppData/Local/Temp/pi-agent-dfaec010-abbb-42c-810d8bea/pi-hub.ts`
-- `C:/Users/vm_user/AppData/Local/Temp/pi-agent-dfaec010-abbb-42c-810d8bea/pi-hub-server.mjs`
-- `C:/Users/vm_user/AppData/Local/Temp/pi-agent-dfaec010-abbb-42c-810d8bea/apps/pi_hub_app/lib/main.dart`
-- `C:/Users/vm_user/AppData/Local/Temp/pi-agent-dfaec010-abbb-42c-810d8bea/apps/pi_hub_app/test/widget_test.dart`
-- `C:/Users/vm_user/AppData/Local/Temp/pi-agent-dfaec010-abbb-42c-810d8bea/apps/pi_hub_app/pubspec.yaml`
-- `C:/Users/vm_user/AppData/Local/Temp/pi-agent-dfaec010-abbb-42c-810d8bea/apps/pi_hub_app/android/app/src/main/AndroidManifest.xml`
-- `C:/Users/vm_user/AppData/Local/Temp/pi-agent-dfaec010-abbb-42c-810d8bea/apps/pi_hub_app/android/app/src/debug/AndroidManifest.xml`
-- `C:/Users/vm_user/AppData/Local/Temp/pi-agent-dfaec010-abbb-42c-810d8bea/README.md`
-- `C:/Users/vm_user/AppData/Local/Temp/pi-agent-dfaec010-abbb-42c-810d8bea/plan.md`
-- `C:/Users/vm_user/AppData/Local/Temp/pi-agent-dfaec010-abbb-42c-810d8bea/progress.md`
-- `C:/Users/vm_user/AppData/Local/Temp/pi-agent-dfaec010-abbb-42c-810d8bea/TODO.md`
-
-Equivalent user-checkout paths should map under `C:/Users/vm_user/Downloads/pi-hub/...`.
+- `pi-hub.ts`
+- `pi-hub-server.mjs`
+- `apps/pi_hub_app/lib/main.dart`
+- `apps/pi_hub_app/lib/src/**`
+- `apps/pi_hub_app/test/widget_test.dart`
+- `apps/pi_hub_app/pubspec.yaml`
+- `apps/pi_hub_app/android/app/src/main/AndroidManifest.xml`
+- `apps/pi_hub_app/android/app/src/debug/AndroidManifest.xml`
+- `README.md`
+- `plan.md`
+- `progress.md`
+- `TODO.md`
 
 ## Current architecture summary
 
@@ -177,7 +168,7 @@ Agent creation service is disabled by default in config:
   "agentCreation": {
     "enabled": false,
     "piCommand": "pi",
-    "workspaceRoots": ["C:/Users/vm_user/Downloads"],
+    "workspaceRoots": ["/home/alice/projects"],
     "defaultArgs": []
   }
 }
