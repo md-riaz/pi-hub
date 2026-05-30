@@ -690,9 +690,9 @@ export default function piHubExtension(pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("hub", {
-		description: "Pi Hub dashboard bridge: /hub [status|info|start]",
+		description: "Pi Hub dashboard bridge: /hub [status|info|start|token]",
 		getArgumentCompletions(prefix: string) {
-			return ["status", "info", "start"].filter((item) => item.startsWith(prefix)).map((value) => ({ value, label: value }));
+			return ["status", "info", "start", "token"].filter((item) => item.startsWith(prefix)).map((value) => ({ value, label: value }));
 		},
 		async handler(args, ctx) {
 			const sub = args.trim().toLowerCase();
@@ -707,6 +707,14 @@ export default function piHubExtension(pi: ExtensionAPI) {
 				}
 				return;
 			}
+			if (sub === "token") {
+				ctx.ui.notify([
+					"═══ Pi Hub Token ═══",
+					`Token: ${config.token}`,
+					`Config: ${configPath()}`,
+				].join("\n"), "info");
+				return;
+			}
 			if (sub === "info" || sub === "status" || !sub) {
 				const pid = readPid();
 				ctx.ui.notify([
@@ -719,7 +727,7 @@ export default function piHubExtension(pi: ExtensionAPI) {
 				].join("\n"), serverOk ? "info" : "warning");
 				return;
 			}
-			ctx.ui.notify("Unknown /hub command. Use /hub, /hub info, or /hub start.", "warning");
+			ctx.ui.notify("Unknown /hub command. Use /hub, /hub info, /hub start, or /hub token.", "warning");
 		},
 	});
 }

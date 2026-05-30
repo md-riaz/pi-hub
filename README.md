@@ -84,6 +84,7 @@ Useful commands:
 /hub          # show hub status
 /hub start    # start or reconnect to the hub server
 /hub info     # show URL, token location, and status
+/hub token    # show the auth token for the mobile app
 ```
 
 ## Mobile app
