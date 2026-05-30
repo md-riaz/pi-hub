@@ -27,15 +27,33 @@ class HubSnapshot {
     final auditEvents = _mapList(
       json['auditEvents'],
     ).map(HubAuditEvent.fromJson).toList();
+    final inboxItems = _mapList(
+      json['inboxItems'],
+    ).map(HubInboxItem.fromJson).toList();
+    final commands = _mapList(
+      json['commands'] ?? json['commandStatuses'],
+    ).map(HubCommand.fromJson).toList();
+    final sessions = _mapList(json['sessions']).map(HubSession.fromJson).map((
+      session,
+    ) {
+      final sessionCommands = commands
+          .where((command) => command.sessionId == session.id)
+          .toList();
+      final sessionInboxItems = inboxItems
+          .where((item) => item.sessionId == session.id)
+          .toList();
+      return session.withActivity(
+        commands: sessionCommands.isEmpty ? session.commands : sessionCommands,
+        inboxItems: sessionInboxItems.isEmpty
+            ? session.inboxItems
+            : sessionInboxItems,
+      );
+    }).toList();
     return HubSnapshot(
       server: _optionalMap(json['server'], HubServerInfo.fromJson),
-      sessions: _mapList(json['sessions']).map(HubSession.fromJson).toList(),
-      inboxItems: _mapList(
-        json['inboxItems'],
-      ).map(HubInboxItem.fromJson).toList(),
-      commands: _mapList(
-        json['commands'] ?? json['commandStatuses'],
-      ).map(HubCommand.fromJson).toList(),
+      sessions: sessions,
+      inboxItems: inboxItems,
+      commands: commands,
       approvals: _mapList(
         json['approvals'],
       ).map(HubApprovalRequest.fromJson).toList(),
@@ -50,12 +68,26 @@ class HubSnapshot {
   }
 
   HubSnapshot upsert(HubSession session) {
+    final sessionCommands = commands
+        .where((command) => command.sessionId == session.id)
+        .toList();
+    final sessionInboxItems = inboxItems
+        .where((item) => item.sessionId == session.id)
+        .toList();
+    final hydrated = session.withActivity(
+      commands: session.commands.isNotEmpty
+          ? session.commands
+          : sessionCommands,
+      inboxItems: session.inboxItems.isNotEmpty
+          ? session.inboxItems
+          : sessionInboxItems,
+    );
     final next = [...sessions];
-    final index = next.indexWhere((item) => item.id == session.id);
+    final index = next.indexWhere((item) => item.id == hydrated.id);
     if (index >= 0) {
-      next[index] = session;
+      next[index] = hydrated;
     } else {
-      next.add(session);
+      next.add(hydrated);
     }
     next.sort((a, b) => a.displayName.compareTo(b.displayName));
     return HubSnapshot(
@@ -175,6 +207,8 @@ class HubSession {
     this.lastSeen,
     this.lastEvent = const {},
     this.health,
+    this.commands = const [],
+    this.inboxItems = const [],
   });
 
   final String id;
@@ -193,6 +227,8 @@ class HubSession {
   final List<HubModel> availableModels;
   final Map<String, dynamic> lastEvent;
   final HubHealth? health;
+  final List<HubCommand> commands;
+  final List<HubInboxItem> inboxItems;
 
   String get displayName => (name == null || name!.isEmpty)
       ? cwd.split(RegExp(r'[\\/]')).last
@@ -219,6 +255,36 @@ class HubSession {
       ).map(HubModel.fromJson).toList(),
       lastEvent: _asMap(json['lastEvent']),
       health: _optionalMap(json['health'], HubHealth.fromJson),
+      commands: _mapList(json['commands']).map(HubCommand.fromJson).toList(),
+      inboxItems: _mapList(
+        json['inboxItems'],
+      ).map(HubInboxItem.fromJson).toList(),
+    );
+  }
+
+  HubSession withActivity({
+    List<HubCommand>? commands,
+    List<HubInboxItem>? inboxItems,
+  }) {
+    return HubSession(
+      id: id,
+      name: name,
+      cwd: cwd,
+      model: model,
+      pid: pid,
+      startedAt: startedAt,
+      lastSeen: lastSeen,
+      status: status,
+      online: online,
+      history: history,
+      liveMessage: liveMessage,
+      tools: tools,
+      contextUsage: contextUsage,
+      availableModels: availableModels,
+      lastEvent: lastEvent,
+      health: health,
+      commands: commands ?? this.commands,
+      inboxItems: inboxItems ?? this.inboxItems,
     );
   }
 }
@@ -442,6 +508,7 @@ class HubCommand {
 
   bool get isPending => status == 'queued' || status == 'delivered';
   bool get isFailed => status == 'failed' || status == 'expired';
+  int? get updatedAt => finishedAt ?? deliveredAt ?? createdAt;
 
   factory HubCommand.fromJson(Map<String, dynamic> json) {
     return HubCommand(

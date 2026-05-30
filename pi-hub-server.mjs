@@ -21,6 +21,8 @@ const DEFAULT_CONFIG = {
   staleThresholdMs: 120_000,
   commandTimeoutMs: 300_000,
   commandHistoryLimit: 500,
+  inboxLimit: 500,
+  inboxDedupeWindowMs: 300_000,
 };
 
 function ensureConfig() {
@@ -38,9 +40,13 @@ function ensureConfig() {
   if (!Number.isFinite(Number(config.staleThresholdMs))) config.staleThresholdMs = DEFAULT_CONFIG.staleThresholdMs;
   if (!Number.isFinite(Number(config.commandTimeoutMs))) config.commandTimeoutMs = DEFAULT_CONFIG.commandTimeoutMs;
   if (!Number.isFinite(Number(config.commandHistoryLimit))) config.commandHistoryLimit = DEFAULT_CONFIG.commandHistoryLimit;
+  if (!Number.isFinite(Number(config.inboxLimit))) config.inboxLimit = DEFAULT_CONFIG.inboxLimit;
+  if (!Number.isFinite(Number(config.inboxDedupeWindowMs))) config.inboxDedupeWindowMs = DEFAULT_CONFIG.inboxDedupeWindowMs;
   config.staleThresholdMs = Math.max(0, Number(config.staleThresholdMs));
   config.commandTimeoutMs = Math.max(1000, Number(config.commandTimeoutMs));
   config.commandHistoryLimit = Math.max(1, Number(config.commandHistoryLimit));
+  config.inboxLimit = Math.max(1, Number(config.inboxLimit));
+  config.inboxDedupeWindowMs = Math.max(1000, Number(config.inboxDedupeWindowMs));
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
   return config;
 }
@@ -49,6 +55,8 @@ const config = ensureConfig();
 const sessions = new Map();
 const commandQueues = new Map();
 const commands = new Map();
+const inboxItems = new Map();
+const inboxDedupe = new Map();
 const watchers = new Set();
 const PENDING_COMMAND_STATUSES = new Set(["queued", "delivered"]);
 let eventSeq = 0;
@@ -104,7 +112,23 @@ function publicSession(session) {
     availableModels: session.availableModels || [],
     lastEvent: session.lastEvent,
     health,
+    commands: publicCommandsForSession(session.id),
+    inboxItems: publicInboxItemsForSession(session.id),
   };
+}
+
+function publicCommandsForSession(sessionId) {
+  return Array.from(commands.values())
+    .filter(command => command.sessionId === sessionId)
+    .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))
+    .map(publicCommand);
+}
+
+function publicInboxItemsForSession(sessionId) {
+  return Array.from(inboxItems.values())
+    .filter(item => item.sessionId === sessionId)
+    .sort((a, b) => Number(b.updatedAt || b.createdAt || 0) - Number(a.updatedAt || a.createdAt || 0))
+    .map(publicInboxItem);
 }
 
 function serverCapabilities() {
@@ -112,7 +136,7 @@ function serverCapabilities() {
     schemaVersion: 2,
     eventEnvelope: true,
     health: true,
-    inbox: false,
+    inbox: true,
     commandLifecycle: true,
     approvals: false,
     diffReviews: false,
@@ -121,8 +145,30 @@ function serverCapabilities() {
   };
 }
 
+function publicInboxItem(item) {
+  return {
+    id: item.id,
+    sessionId: item.sessionId || null,
+    type: item.type,
+    severity: item.severity,
+    title: item.title,
+    body: item.body,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+    readAt: item.readAt || null,
+    actionRef: item.actionRef || null,
+  };
+}
+
+function publicInboxItems() {
+  return Array.from(inboxItems.values())
+    .sort((a, b) => Number(b.updatedAt || b.createdAt || 0) - Number(a.updatedAt || a.createdAt || 0))
+    .map(publicInboxItem);
+}
+
 function snapshot() {
   expireCommands();
+  refreshAttentionInboxItems();
   return {
     server: {
       pid: process.pid,
@@ -134,12 +180,14 @@ function snapshot() {
       schemaVersion: 2,
       staleThresholdMs: Number(config.staleThresholdMs),
       commandTimeoutMs: Number(config.commandTimeoutMs),
+      inboxLimit: Number(config.inboxLimit),
       capabilities: serverCapabilities(),
     },
     sessions: Array.from(sessions.values())
       .sort((a, b) => String(a.cwd).localeCompare(String(b.cwd)) || String(a.name || a.id).localeCompare(String(b.name || b.id)))
       .map(publicSession),
     commands: publicCommands(),
+    inboxItems: publicInboxItems(),
   };
 }
 
@@ -244,6 +292,167 @@ function pendingCommandCountForSession(sessionId) {
   return count;
 }
 
+function trimInboxItems() {
+  const limit = Number(config.inboxLimit);
+  if (inboxItems.size <= limit) return;
+  const oldest = Array.from(inboxItems.values()).sort((a, b) => Number(a.updatedAt || a.createdAt || 0) - Number(b.updatedAt || b.createdAt || 0));
+  for (const item of oldest) {
+    if (inboxItems.size <= limit) break;
+    if (item.readAt) inboxItems.delete(item.id);
+  }
+  for (const item of oldest) {
+    if (inboxItems.size <= limit) break;
+    inboxItems.delete(item.id);
+  }
+}
+
+function inboxDedupeKey({ sessionId, type, actionRef, dedupeKey }) {
+  if (dedupeKey) return String(dedupeKey);
+  if (actionRef?.kind && actionRef?.id) return `${sessionId || "global"}:${type}:${actionRef.kind}:${actionRef.id}`;
+  const bucket = Math.floor(Date.now() / Number(config.inboxDedupeWindowMs));
+  return `${sessionId || "global"}:${type}:${bucket}`;
+}
+
+function upsertInboxItem(input = {}) {
+  const now = Date.now();
+  const type = String(input.type || "system");
+  const key = inboxDedupeKey({ ...input, type });
+  const existingId = inboxDedupe.get(key);
+  const existing = existingId ? inboxItems.get(existingId) : undefined;
+  const sessionId = typeof input.sessionId === "string" ? input.sessionId : undefined;
+  const item = existing || {
+    id: input.id || `inbox_${crypto.randomUUID()}`,
+    sessionId,
+    type,
+    severity: String(input.severity || "info"),
+    title: String(input.title || "Hub notification"),
+    body: String(input.body || ""),
+    createdAt: Number(input.createdAt || now),
+    updatedAt: Number(input.updatedAt || now),
+    readAt: input.readAt || null,
+    actionRef: input.actionRef || null,
+  };
+  let changed = !existing;
+  if (existing) {
+    const nextSeverity = String(input.severity || item.severity || "info");
+    const nextTitle = String(input.title || item.title || "Hub notification");
+    const nextBody = String(input.body || item.body || "");
+    const nextActionRef = input.actionRef || item.actionRef;
+    const nextReadAt = input.readAt !== undefined ? input.readAt : item.readAt;
+    changed = item.severity !== nextSeverity || item.title !== nextTitle || item.body !== nextBody || JSON.stringify(item.actionRef || null) !== JSON.stringify(nextActionRef || null) || item.readAt !== nextReadAt;
+    item.severity = nextSeverity;
+    item.title = nextTitle;
+    item.body = nextBody;
+    item.actionRef = nextActionRef || null;
+    item.readAt = nextReadAt || null;
+    if (changed) item.updatedAt = Number(input.updatedAt || now);
+  }
+  inboxItems.set(item.id, item);
+  inboxDedupe.set(key, item.id);
+  trimInboxItems();
+  if (changed) broadcast({ type: "inbox.updated", inboxItem: publicInboxItem(item) });
+  return item;
+}
+
+function markInboxItemsRead(ids = []) {
+  const now = Date.now();
+  const updated = [];
+  for (const id of ids) {
+    const item = inboxItems.get(String(id));
+    if (!item) continue;
+    if (!item.readAt) item.readAt = now;
+    item.updatedAt = now;
+    updated.push(item);
+    broadcast({ type: "inbox.updated", inboxItem: publicInboxItem(item) });
+  }
+  return updated;
+}
+
+function sessionLabel(sessionId) {
+  const session = sessionId ? sessions.get(sessionId) : undefined;
+  return session?.name || session?.cwd?.split(/[\\/]/).filter(Boolean).pop() || sessionId || "agent";
+}
+
+function commandDisplayType(command) {
+  return String(command?.type || "command").replace(/_/g, " ");
+}
+
+function createToolErrorInbox(sessionId, tool = {}, error) {
+  const label = sessionLabel(sessionId);
+  const name = tool.name || "tool";
+  const id = tool.id || `${name}:${Date.now()}`;
+  return upsertInboxItem({
+    sessionId,
+    type: "tool_error",
+    severity: "error",
+    title: "Tool failed",
+    body: `${name} failed for ${label}${error ? `: ${error}` : ""}`,
+    actionRef: { kind: "session", id: sessionId },
+    dedupeKey: `${sessionId}:tool_error:${id}`,
+  });
+}
+
+function createHealthInboxForSession(session) {
+  if (!session?.id) return;
+  const health = deriveSessionHealth(session);
+  const label = sessionLabel(session.id);
+  if (health.state === "offline") {
+    upsertInboxItem({
+      sessionId: session.id,
+      type: "offline",
+      severity: "warning",
+      title: "Agent offline",
+      body: `${label} is offline.`,
+      actionRef: { kind: "session", id: session.id },
+      dedupeKey: `${session.id}:offline`,
+    });
+  } else if (health.state === "stale") {
+    upsertInboxItem({
+      sessionId: session.id,
+      type: "stale",
+      severity: "warning",
+      title: "Agent stale",
+      body: `${label} has missed heartbeat threshold.`,
+      actionRef: { kind: "session", id: session.id },
+      dedupeKey: `${session.id}:stale`,
+    });
+  }
+}
+
+function refreshAttentionInboxItems() {
+  for (const session of sessions.values()) createHealthInboxForSession(session);
+}
+
+function createActionInbox(event, kind, defaults) {
+  const payload = event.payload || {};
+  const record = payload[kind] && typeof payload[kind] === "object" ? payload[kind] : payload;
+  const id = String(record.id || payload[`${kind}Id`] || event.id);
+  upsertInboxItem({
+    sessionId: event.sessionId,
+    type: defaults.type,
+    severity: String(record.severity || "warning"),
+    title: String(record.title || defaults.title),
+    body: String(record.body || record.summary || defaults.body(event.sessionId, record)),
+    actionRef: { kind: defaults.refKind, id },
+    dedupeKey: `${event.sessionId || "global"}:${defaults.type}:${id}`,
+  });
+}
+
+function processInboxForEvent(event, session) {
+  const payload = event.payload || {};
+  const type = event.type || "";
+  if ((type === "session.tool_end" || event.legacyType === "tool_end") && payload.tool && (payload.tool.isError || payload.tool.status === "error")) {
+    createToolErrorInbox(event.sessionId, payload.tool, payload.error || payload.tool.error);
+  }
+  if (type === "approval.requested" || type === "approval_requested") {
+    createActionInbox(event, "approval", { type: "approval", refKind: "approval", title: "Approval needed", body: sessionId => `${sessionLabel(sessionId)} requested approval.` });
+  }
+  if (type === "diff_review.requested" || type === "diff_review_requested") {
+    createActionInbox(event, "diffReview", { type: "diff_review", refKind: "diff_review", title: "Diff review ready", body: (sessionId, review) => `${sessionLabel(sessionId)} has ${Array.isArray(review.files) ? review.files.length : ""} files ready for review.` });
+  }
+  createHealthInboxForSession(session);
+}
+
 function broadcastCommandUpdate(command, reason) {
   const session = sessions.get(command.sessionId);
   broadcast({
@@ -283,6 +492,7 @@ function markCommandStatus(commandOrId, status, options = {}) {
   if (status === "applied" || status === "failed" || status === "expired") command.finishedAt = command.finishedAt || now;
   if (typeof options.error === "string" && options.error) command.error = options.error;
   commands.set(command.id, command);
+  if (status === "failed" || status === "expired") createCommandFailureInbox(command, status);
   if (previous !== command.status || options.error) broadcastCommandUpdate(command, options.reason || status);
   trimCommands();
   return command;
@@ -295,6 +505,21 @@ function expireCommands() {
       markCommandStatus(command, "expired", { error: "command expired", reason: "expired" });
     }
   }
+}
+
+function createCommandFailureInbox(command, reason = "failed") {
+  if (!command || !command.sessionId) return undefined;
+  const label = sessionLabel(command.sessionId);
+  const actionRef = { kind: "command", id: command.id };
+  return upsertInboxItem({
+    sessionId: command.sessionId,
+    type: "command_failure",
+    severity: "error",
+    title: reason === "expired" ? "Command expired" : "Command failed",
+    body: `${commandDisplayType(command)} for ${label}: ${command.error || reason}`,
+    actionRef,
+    dedupeKey: `${command.sessionId}:command_failure:${command.id}`,
+  });
 }
 
 function createCommand(sessionId, type, payload = {}) {
@@ -571,6 +796,7 @@ function applyEvent(event) {
     applyCommandResult(event);
   }
   session.lastEvent = event;
+  processInboxForEvent(event, session);
   return session;
 }
 
@@ -747,6 +973,15 @@ const server = http.createServer(async (req, res) => {
       const session = applyEvent(event);
       broadcast({ type: "session_updated", reason: event.legacyType || event.type || "event", session: publicSession(session), event });
       sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/v2/inbox/read") {
+      const body = await readBody(req);
+      const ids = Array.isArray(body.ids) ? body.ids : body.id ? [body.id] : [];
+      if (!ids.length) throw new Error("ids required");
+      const updated = markInboxItemsRead(ids);
+      sendJson(res, 200, { ok: true, inboxItems: updated.map(publicInboxItem) });
       return;
     }
 

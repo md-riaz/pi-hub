@@ -8,6 +8,7 @@ import 'package:pi_hub_app/main.dart';
 import 'package:pi_hub_app/src/hub_client.dart';
 import 'package:pi_hub_app/src/hub_models.dart';
 import 'package:pi_hub_app/src/mission_control_screen.dart';
+import 'package:pi_hub_app/src/session_detail_screen.dart';
 
 void main() {
   testWidgets('Pi Hub renders connection form', (WidgetTester tester) async {
@@ -76,6 +77,105 @@ void main() {
     expect(find.text('ctx 62%'), findsOneWidget);
     expect(find.text('1 unread'), findsWidgets);
     expect(find.text('1 pending'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Session detail renders command lifecycle', (
+    WidgetTester tester,
+  ) async {
+    final sendController = TextEditingController();
+    addTearDown(sendController.dispose);
+    final snapshot = HubSnapshot.fromJson({
+      'sessions': [
+        {
+          'id': 'session-command',
+          'name': 'Command Agent',
+          'cwd': '/workspace/commands',
+          'model': 'gpt-5-codex',
+          'pid': 777,
+          'status': 'idle',
+          'online': true,
+          'history': [],
+          'tools': [],
+          'availableModels': [],
+        },
+      ],
+      'commands': [
+        {
+          'id': 'cmd-queued',
+          'sessionId': 'session-command',
+          'type': 'user_message',
+          'status': 'queued',
+          'createdAt': 1770000000000,
+        },
+        {
+          'id': 'cmd-delivered',
+          'sessionId': 'session-command',
+          'type': 'abort',
+          'status': 'delivered',
+          'createdAt': 1770000001000,
+          'deliveredAt': 1770000002000,
+        },
+        {
+          'id': 'cmd-failed',
+          'sessionId': 'session-command',
+          'type': 'set_model',
+          'status': 'failed',
+          'createdAt': 1770000003000,
+          'deliveredAt': 1770000004000,
+          'finishedAt': 1770000005000,
+          'error': 'target model unavailable',
+        },
+      ],
+      'inboxItems': [
+        {
+          'id': 'inbox-cmd-failed',
+          'sessionId': 'session-command',
+          'type': 'command_failure',
+          'severity': 'error',
+          'title': 'Command failed',
+          'body': 'set model failed',
+          'readAt': null,
+          'actionRef': {'kind': 'command', 'id': 'cmd-failed'},
+        },
+      ],
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(useMaterial3: true),
+        home: Scaffold(
+          body: SessionDetailScreen(
+            session: snapshot.sessions.single,
+            sendController: sendController,
+            onSend: () {},
+            onAbort: () {},
+            onCompact: () {},
+            onShutdown: () {},
+            onModel: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('command-status-strip')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('command-status-cmd-queued')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('command-status-cmd-delivered')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('command-status-cmd-failed')),
+      findsOneWidget,
+    );
+    expect(find.text('user message · queued'), findsOneWidget);
+    expect(find.text('abort · delivered'), findsOneWidget);
+    expect(find.text('set model · failed'), findsOneWidget);
+    expect(find.textContaining('target model unavailable'), findsOneWidget);
+    expect(find.textContaining('Inbox: Command failed'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

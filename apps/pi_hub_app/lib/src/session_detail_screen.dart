@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'hub_models.dart';
+import 'widgets/command_status_strip.dart';
 
 class SessionDetailScreen extends StatelessWidget {
   const SessionDetailScreen({
@@ -40,6 +41,13 @@ class SessionDetailScreen extends StatelessWidget {
           onModel: onModel,
         ),
         const Divider(height: 1),
+        if (session.commands.isNotEmpty) ...[
+          CommandStatusStrip(
+            commands: session.commands,
+            inboxItems: session.inboxItems,
+          ),
+          const Divider(height: 1),
+        ],
         if (session.tools.isNotEmpty) ToolStrip(tools: session.tools),
         Expanded(
           child: items.isEmpty

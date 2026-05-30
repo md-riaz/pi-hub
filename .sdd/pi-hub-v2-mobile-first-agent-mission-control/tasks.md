@@ -89,7 +89,7 @@ Each task uses:
   - Evidence: `node --check pi-hub-server.mjs`; smoke test queues command, polls it, posts result, snapshot shows final status.
   - Review estimate: ~360 changed lines, 55 min.
 
-- [ ] T10 — Show command lifecycle in Flutter
+- [x] T10 — Show command lifecycle in Flutter
   - Files:
     - `apps/pi_hub_app/lib/src/hub_models.dart`
     - `apps/pi_hub_app/lib/src/session_detail_screen.dart`
@@ -99,7 +99,7 @@ Each task uses:
   - Evidence: Widget test for queued/delivered/failed commands; `flutter analyze && flutter test`.
   - Review estimate: ~300 changed lines, 40 min.
 
-- [ ] T11 — Add server inbox model and read API
+- [x] T11 — Add server inbox model and read API
   - Files:
     - `pi-hub-server.mjs`
   - Detail: Add capped `inboxItems` store, item generation for command failures/tool errors/stale/offline/approval/diff placeholders, `/api/v2/inbox/read`, snapshot inclusion, SSE broadcasts, dedupe rules.
