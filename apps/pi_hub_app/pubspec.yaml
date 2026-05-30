@@ -1,5 +1,5 @@
 name: pi_hub_app
-description: "Android dashboard for monitoring and controlling Pi Hub sessions over LAN or Tailscale."
+description: "Android dashboard for monitoring and controlling Pi Hub sessions over any network."
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -10,6 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.8
+  shared_preferences: ^2.5.3
   # Push stays provider-neutral/local: app registers device via hub API; server may dispatch via ntfy when configured.
 
 dev_dependencies:

@@ -4,7 +4,7 @@
 
 - [x] Confirm architecture with user.
 - [x] Use local hub-host server now, keep protocol hybrid/cloud-friendly.
-- [x] Use Tailscale/LAN phone access with token auth.
+- [x] Use any-network phone access with token auth.
 - [x] Keep history memory-only on central server.
 - [x] Stream Pi session conversation history and current work.
 - [x] Add Flutter Android dashboard.

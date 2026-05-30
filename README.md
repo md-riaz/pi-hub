@@ -1,6 +1,6 @@
 # Pi Hub
 
-Pi Hub is a local-first mission-control dashboard for Pi Coding Agent sessions. It combines a Pi extension, a small HTTP/SSE hub server, and a Flutter Android app so you can monitor and control multiple running agents from a phone on your trusted LAN or Tailscale network.
+Pi Hub is a local-first mission-control dashboard for Pi Coding Agent sessions. It combines a Pi extension, a small HTTP/SSE hub server, and a Flutter Android app so you can monitor and control multiple running agents from a phone over any network that can reach the hub host.
 
 > Status: early but usable. The hub is designed for private networks and should not be exposed directly to the public internet.
 
@@ -42,7 +42,7 @@ Android device
 - Pi Coding Agent `>=0.60.0`.
 - Node.js `18+` on the machine running Pi sessions.
 - Flutter/Dart if you want to run or build the Android app from source.
-- Android emulator, USB-connected Android device, or phone on the same LAN/Tailscale network as the hub host.
+- Android emulator, USB-connected Android device, or phone on any network that can reach the hub host (same WiFi, VPN, etc.).
 
 ## Installation
 
@@ -81,10 +81,11 @@ Inside any Pi session:
 Useful commands:
 
 ```text
-/hub          # show hub status
-/hub start    # start or reconnect to the hub server
-/hub info     # show URL, token location, and status
-/hub token    # show the auth token for the mobile app
+/hub              # show hub status
+/hub start        # start or reconnect to the hub server
+/hub info         # show LAN IPs, token, and status
+/hub stop         # disconnect this session from hub
+/hub server stop  # kill the hub server (all sessions)
 ```
 
 ## Mobile app
@@ -129,10 +130,10 @@ Token file on the hub host:
 Common URLs (the app adds `http://` automatically if you enter only `host:port`):
 
 - Android emulator: `http://10.0.2.2:17878`
-- Physical phone on LAN: `http://<hub-host-lan-ip>:17878`
-- Phone over Tailscale: `http://<hub-host-tailscale-ip>:17878`
+- Phone on same WiFi/LAN: `http://<hub-host-lan-ip>:17878`
+- Phone over VPN or other network: use any IP that reaches the hub host
 
-For phone access, keep the server bound to `0.0.0.0` and allow inbound TCP `17878` through the hub host firewall.
+Run `/hub info` to see detected LAN IPs. The server binds `0.0.0.0` by default so any network interface works. Allow inbound TCP `17878` through the hub host firewall if needed.
 
 ## Daily usage
 
@@ -289,16 +290,16 @@ See [`docs/pi-hub-v2-protocol.md`](docs/pi-hub-v2-protocol.md) for protocol note
 
 ## Security notes
 
-Pi Hub is intended for trusted LAN/Tailscale environments.
+Pi Hub is intended for trusted network environments (LAN, VPN, etc.).
 
-Do not expose the hub directly to the public internet. Before public exposure, add HTTPS, stronger authentication, token rotation, rate limiting, and persistent audit controls.
+Do not expose the hub directly to the public internet without additional hardening. Before public exposure, add HTTPS, stronger authentication, token rotation, rate limiting, and persistent audit controls.
 
 Protect `~/.pi/agent/pi-hub/config.json`; it contains the bearer token and may contain push provider credentials. If agent creation is enabled, bearer-token access can start new local processes inside configured workspace roots.
 
 ## Troubleshooting
 
 - **No sessions visible**: restart Pi sessions after installing the extension, then run `/hub start`.
-- **Phone cannot connect**: use the hub host LAN/Tailscale IP, keep `host: "0.0.0.0"`, and check firewall rules for TCP `17878`.
+- **Phone cannot connect**: run `/hub info` to see LAN IPs, keep `host: "0.0.0.0"`, and check firewall rules for TCP `17878`.
 - **Unauthorized**: copy the current token from `~/.pi/agent/pi-hub/config.json`.
 - **Stale server state**: stop the old Node process or remove the stale `~/.pi/agent/pi-hub/server.pid`, then run `/hub start`.
 - **Emulator cannot connect**: use `http://10.0.2.2:17878`, not `localhost`.

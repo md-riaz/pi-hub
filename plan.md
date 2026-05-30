@@ -3,7 +3,7 @@
 ## Decisions
 
 - Server topology: run central Pi Hub server on the user's Pi host machine now; keep protocol HTTP/SSE so a cloud/VPS relay can be added later without replacing clients.
-- Phone access: Android connects over Tailscale or LAN to the hub host on TCP `17878`, protected by bearer token from `~/.pi/agent/pi-hub/config.json`.
+- Phone access: Android connects over any network (WiFi, LAN, VPN, etc.) to the hub host on TCP `17878`, protected by bearer token from `~/.pi/agent/pi-hub/config.json`.
 - History: memory-only on the hub server. Each live Pi session sends its recent session entries on registration and event updates while running; no server-side transcript database for now.
 - First controls: Flutter app can view sessions, send prompts, abort current work, trigger compaction, switch model, and shutdown a selected Pi session.
 - Agent creation: disabled by default; when explicitly enabled, `/api/v2/agents/create` spawns only the configured command without shell interpolation and only inside configured workspace roots.
@@ -25,7 +25,7 @@ Pi Hub server
   └─ memory Map of sessions + per-session command queues
 
 Flutter Android app
-  ├─ connects over LAN/Tailscale with bearer token
+  ├─ connects over any network with bearer token
   ├─ renders session list, transcript, current tool work
   └─ queues prompt/control commands to selected session
 ```
@@ -41,7 +41,7 @@ Flutter Android app
    - Add better command acknowledgements and visible command result status.
    - Keep agent creation guarded with explicit config, audit events, and narrow workspace root allowlists.
    - Add optional PIN rotation command.
-   - Add network setup help for Tailscale/LAN/firewall.
+   - Add network setup help for LAN/firewall.
 
 3. Hybrid/cloud later
    - Keep same JSON/SSE schema.

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'src/hub_client.dart';
 import 'src/hub_models.dart';
@@ -39,6 +40,9 @@ class HubHomePage extends StatefulWidget {
 }
 
 class _HubHomePageState extends State<HubHomePage> {
+  static const _prefServerUrl = 'hub_server_url';
+  static const _prefToken = 'hub_token';
+
   final TextEditingController _serverController = TextEditingController(
     text: 'http://10.0.2.2:17878',
   );
@@ -66,6 +70,12 @@ class _HubHomePageState extends State<HubHomePage> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _loadSavedConnection();
+  }
+
+  @override
   void dispose() {
     _subscription?.cancel();
     _serverController.dispose();
@@ -74,6 +84,28 @@ class _HubHomePageState extends State<HubHomePage> {
     _modelFilterController.dispose();
     _client.close();
     super.dispose();
+  }
+
+  Future<void> _loadSavedConnection() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedUrl = prefs.getString(_prefServerUrl);
+    final savedToken = prefs.getString(_prefToken);
+    if (savedUrl != null && savedUrl.isNotEmpty) {
+      _serverController.text = savedUrl;
+    }
+    if (savedToken != null && savedToken.isNotEmpty) {
+      _tokenController.text = savedToken;
+    }
+    // Auto-connect if we have saved credentials
+    if (savedUrl != null && savedUrl.isNotEmpty && savedToken != null && savedToken.isNotEmpty) {
+      _connect();
+    }
+  }
+
+  Future<void> _saveConnection() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_prefServerUrl, _serverController.text);
+    await prefs.setString(_prefToken, _tokenController.text);
   }
 
   Future<void> _connect() async {
@@ -90,6 +122,7 @@ class _HubHomePageState extends State<HubHomePage> {
     );
     _serverController.text = _client.baseUrl;
     _tokenController.text = _client.token;
+    await _saveConnection();
 
     try {
       final snapshot = await _client.fetchSnapshot();
