@@ -10,7 +10,7 @@
 - [x] Add Flutter Android dashboard.
 - [x] Support sending prompts to selected Pi session.
 - [x] Add first-pass full controls: abort, compact, model switch, shutdown.
-- [x] Document clone, install, app run/build, dashboard usage, API, and troubleshooting.
+- [x] Document direct Git URL install, local development, app run/build, dashboard usage, API, and troubleshooting.
 - [x] Add repository ignore rules for local build/runtime artifacts and secrets.
 - [x] Add command acknowledgement/result UI beyond queued snackbars.
 - [x] Add guarded, disabled-by-default agent creation for allowlisted workspace roots plus mobile create form.

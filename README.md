@@ -46,26 +46,31 @@ Android device
 
 ## Installation
 
-### 1. Clone the repository
+### 1. Install the Pi extension
+
+Install directly from GitHub:
+
+```bash
+pi install https://github.com/md-riaz/pi-hub
+```
+
+Equivalent Git source form:
+
+```bash
+pi install git:github.com/md-riaz/pi-hub
+```
+
+For development, install from a local checkout instead:
 
 ```bash
 git clone https://github.com/md-riaz/pi-hub.git
 cd pi-hub
-```
-
-### 2. Install the Pi extension
-
-From the repository root:
-
-```bash
 pi install .
 ```
 
-If your Pi CLI requires an absolute path, pass the absolute path to your local clone instead of `.`.
-
 Restart the Pi sessions you want to manage. Each restarted session loads `pi-hub.ts`, starts the hub server if needed, and registers with it.
 
-### 3. Check the hub from Pi
+### 2. Check the hub from Pi
 
 Inside any Pi session:
 
