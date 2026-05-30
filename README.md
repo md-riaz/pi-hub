@@ -125,7 +125,7 @@ Token file on the hub host:
 ~/.pi/agent/pi-hub/config.json
 ```
 
-Common URLs:
+Common URLs (the app adds `http://` automatically if you enter only `host:port`):
 
 - Android emulator: `http://10.0.2.2:17878`
 - Physical phone on LAN: `http://<hub-host-lan-ip>:17878`

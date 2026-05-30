@@ -18,6 +18,7 @@ class MissionControlScreen extends StatelessWidget {
     required this.selectedSession,
     required this.selectedSessionId,
     required this.connectionState,
+    required this.connected,
     required this.connecting,
     required this.serverController,
     required this.tokenController,
@@ -41,6 +42,7 @@ class MissionControlScreen extends StatelessWidget {
   final HubSession? selectedSession;
   final String? selectedSessionId;
   final String connectionState;
+  final bool connected;
   final bool connecting;
   final TextEditingController serverController;
   final TextEditingController tokenController;
@@ -130,12 +132,14 @@ class MissionControlScreen extends StatelessWidget {
       body: SafeArea(
         child: Column(
           children: [
-            ConnectionBar(
-              serverController: serverController,
-              tokenController: tokenController,
-              connecting: connecting,
-              onConnect: onConnect,
-            ),
+            if (!connected)
+              ConnectionBar(
+                serverController: serverController,
+                tokenController: tokenController,
+                connecting: connecting,
+                connected: connected,
+                onConnect: onConnect,
+              ),
             NotificationBanner(
               snapshot: snapshot,
               connected: connectionState == 'Live',
@@ -208,7 +212,7 @@ class MissionControlScreen extends StatelessWidget {
                     onOpenDiffReview: (id) => _openDiffReview(context, id),
                   ),
                   selected == null
-                      ? const Center(child: Text('No Pi sessions connected'))
+                      ? const EmptyAgentState()
                       : SessionDetailScreen(
                           session: selected,
                           sendController: sendController,
@@ -275,7 +279,7 @@ class MissionControlScreen extends StatelessWidget {
         const VerticalDivider(width: 1),
         Expanded(
           child: selected == null
-              ? const Center(child: Text('No Pi sessions connected'))
+              ? const EmptyAgentState()
               : SessionDetailScreen(
                   session: selected,
                   sendController: sendController,
@@ -331,6 +335,47 @@ class MissionControlScreen extends StatelessWidget {
   }
 }
 
+class EmptyAgentState extends StatelessWidget {
+  const EmptyAgentState({super.key, this.compact = false});
+
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: compact ? 320 : 460),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.smart_toy_outlined,
+                size: compact ? 36 : 52,
+                color: theme.colorScheme.primary,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'No agents connected yet',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Hub is connected, but no Pi session has registered. Restart or open a Pi session after installing Pi Hub, then run /hub start if needed.',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class SessionList extends StatelessWidget {
   const SessionList({
     super.key,
@@ -355,7 +400,7 @@ class SessionList extends StatelessWidget {
   Widget build(BuildContext context) {
     final sorted = _sortedSessions;
     if (sorted.isEmpty) {
-      return const Center(child: Text('No Pi sessions connected'));
+      return const EmptyAgentState(compact: true);
     }
     return ListView.builder(
       padding: const EdgeInsets.all(8),

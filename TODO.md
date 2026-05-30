@@ -14,6 +14,7 @@
 - [x] Add repository ignore rules for local build/runtime artifacts and secrets.
 - [x] Add command acknowledgement/result UI beyond queued snackbars.
 - [x] Add guarded, disabled-by-default agent creation for allowlisted workspace roots plus mobile create form.
+- [x] Improve mobile connect UX with automatic `http://`, hidden setup form after connect, and clearer empty-agent guidance.
 - [ ] Add `/hub rotate-token` or setup UI for token rotation.
 - [ ] Add stronger auth/HTTPS before any public internet exposure.
 - [ ] Add optional cloud relay mode later.

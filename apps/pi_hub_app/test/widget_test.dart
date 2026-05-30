@@ -15,6 +15,7 @@ import 'package:pi_hub_app/src/hub_models.dart';
 import 'package:pi_hub_app/src/inbox_screen.dart';
 import 'package:pi_hub_app/src/mission_control_screen.dart';
 import 'package:pi_hub_app/src/session_detail_screen.dart';
+import 'package:pi_hub_app/src/widgets/connection_bar.dart';
 import 'package:pi_hub_app/src/widgets/notification_banner.dart';
 
 void main() {
@@ -27,12 +28,16 @@ void main() {
     expect(find.text('Connect'), findsOneWidget);
   });
 
-  test('split HubClient trims base URL', () {
+  test('split HubClient normalizes base URL', () {
     final client = HubClient()
-      ..configure(baseUrl: 'http://host:17878///', token: 'secret');
+      ..configure(baseUrl: 'host:17878///', token: ' secret ');
 
     expect(client.baseUrl, 'http://host:17878');
     expect(client.token, 'secret');
+    expect(
+      HubClient.normalizeBaseUrl('https://example.com///'),
+      'https://example.com',
+    );
     client.close();
   });
 
@@ -116,7 +121,11 @@ void main() {
             'hasToken': true,
             'scopes': ['critical', 'approval'],
           },
-          'provider': {'enabled': false, 'configured': false, 'provider': 'ntfy'},
+          'provider': {
+            'enabled': false,
+            'configured': false,
+            'provider': 'ntfy',
+          },
         }),
       );
       await request.response.close();
@@ -899,6 +908,53 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('connected empty state hides connect form', (
+    WidgetTester tester,
+  ) async {
+    final sendController = TextEditingController();
+    final serverController = TextEditingController(text: 'http://hub:17878');
+    final tokenController = TextEditingController(text: 'secret');
+    addTearDown(sendController.dispose);
+    addTearDown(serverController.dispose);
+    addTearDown(tokenController.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(useMaterial3: true),
+        home: MissionControlScreen(
+          snapshot: HubSnapshot.empty(),
+          selectedSession: null,
+          selectedSessionId: null,
+          connectionState: 'Live',
+          connected: true,
+          connecting: false,
+          serverController: serverController,
+          tokenController: tokenController,
+          sendController: sendController,
+          onConnect: () {},
+          onSelected: (_) {},
+          onSend: () {},
+          onAbort: () {},
+          onCompact: () {},
+          onShutdown: () {},
+          onModel: () {},
+          onMarkInboxRead: (_) async {},
+          onApprovalResponse: (approval, response, comment) async {},
+          onRespondToDiffReview: (review, action, comment) async {},
+          onCreateAgent: (_) async =>
+              AgentCreateResult(status: 'unused', complete: true),
+          onRegisterPushDevice: () async {},
+          onDisablePushDevice: () async {},
+        ),
+      ),
+    );
+
+    expect(find.byType(ConnectionBar), findsNothing);
+    expect(find.text('No agents connected yet'), findsWidgets);
+    expect(find.textContaining('/hub start'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Agent create action hides when disabled', (
     WidgetTester tester,
   ) async {
@@ -923,6 +979,7 @@ void main() {
           selectedSession: null,
           selectedSessionId: null,
           connectionState: 'Connected',
+          connected: true,
           connecting: false,
           serverController: serverController,
           tokenController: tokenController,
@@ -974,6 +1031,7 @@ void main() {
           selectedSession: null,
           selectedSessionId: null,
           connectionState: 'Connected',
+          connected: true,
           connecting: false,
           serverController: serverController,
           tokenController: tokenController,

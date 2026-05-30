@@ -16,6 +16,7 @@
 - Added controls after consultation: abort, compact, model switch, shutdown.
 - Added guarded agent creation backend disabled by default, with workspace root allowlist, shell-free spawn, `/api/v2/agents/create`, audit entries, and README risk docs.
 - Added mobile create-agent form shown only when server capability `agentCreation` is true.
+- Improved mobile connection UX: host-only URLs auto-normalize to `http://`, connected state hides setup form, and empty agent state explains how sessions appear.
 
 ## Validation
 

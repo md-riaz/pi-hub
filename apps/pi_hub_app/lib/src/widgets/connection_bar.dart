@@ -6,12 +6,14 @@ class ConnectionBar extends StatelessWidget {
     required this.serverController,
     required this.tokenController,
     required this.connecting,
+    required this.connected,
     required this.onConnect,
   });
 
   final TextEditingController serverController;
   final TextEditingController tokenController;
   final bool connecting;
+  final bool connected;
   final VoidCallback onConnect;
 
   @override
@@ -24,7 +26,7 @@ class ConnectionBar extends StatelessWidget {
             controller: serverController,
             decoration: const InputDecoration(
               labelText: 'Server URL',
-              hintText: 'http://10.0.2.2:17878 or http://VM-IP:17878',
+              hintText: '10.0.2.2:17878 or hub-host-ip:17878',
               border: OutlineInputBorder(),
             ),
           ),
@@ -48,7 +50,7 @@ class ConnectionBar extends StatelessWidget {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.wifi_tethering),
-              label: const Text('Connect'),
+              label: Text(connected ? 'Reconnect' : 'Connect'),
             ),
           ),
         ];

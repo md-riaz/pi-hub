@@ -54,6 +54,8 @@ class _HubHomePageState extends State<HubHomePage> {
   String _connectionState = 'Disconnected';
   bool _connecting = false;
 
+  bool get _connected =>
+      _snapshot != null && !_connectionState.startsWith('Failed');
   List<HubSession> get _sessions => _snapshot?.sessions ?? const [];
   HubSession? get _selectedSession {
     if (_sessions.isEmpty) return null;
@@ -83,9 +85,11 @@ class _HubHomePageState extends State<HubHomePage> {
 
     await _subscription?.cancel();
     _client.configure(
-      baseUrl: _serverController.text.trim(),
-      token: _tokenController.text.trim(),
+      baseUrl: _serverController.text,
+      token: _tokenController.text,
     );
+    _serverController.text = _client.baseUrl;
+    _tokenController.text = _client.token;
 
     try {
       final snapshot = await _client.fetchSnapshot();
@@ -243,9 +247,9 @@ class _HubHomePageState extends State<HubHomePage> {
       );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Push registration failed: $error')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Push registration failed: $error')),
+      );
     }
   }
 
@@ -394,6 +398,7 @@ class _HubHomePageState extends State<HubHomePage> {
       selectedSession: _selectedSession,
       selectedSessionId: _selectedSession?.id,
       connectionState: _connectionState,
+      connected: _connected,
       connecting: _connecting,
       serverController: _serverController,
       tokenController: _tokenController,

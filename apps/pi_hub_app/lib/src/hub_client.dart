@@ -131,8 +131,15 @@ class HubClient {
   HttpClient? _streamClient;
 
   void configure({required String baseUrl, required String token}) {
-    this.baseUrl = baseUrl.replaceAll(RegExp(r'/+$'), '');
-    this.token = token;
+    this.baseUrl = normalizeBaseUrl(baseUrl);
+    this.token = token.trim();
+  }
+
+  static String normalizeBaseUrl(String input) {
+    final trimmed = input.trim();
+    if (trimmed.isEmpty) return '';
+    final withScheme = trimmed.contains('://') ? trimmed : 'http://$trimmed';
+    return withScheme.replaceAll(RegExp(r'/+$'), '');
   }
 
   Uri _uri(String path) =>
@@ -291,10 +298,7 @@ class HubClient {
   Future<HubPushDevice> registerPushDevice(
     PushDeviceRegistration registration,
   ) async {
-    final data = await _postJson(
-      '/api/v2/push/devices',
-      registration.toJson(),
-    );
+    final data = await _postJson('/api/v2/push/devices', registration.toJson());
     final device = data['pushDevice'];
     if (device is Map) return HubPushDevice.fromJson(_stringKeyMap(device));
     throw Exception('Invalid push device response');

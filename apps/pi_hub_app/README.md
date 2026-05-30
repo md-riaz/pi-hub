@@ -38,7 +38,7 @@ Start the hub from a Pi session first:
 /hub start
 ```
 
-Then enter the hub URL and token in the app.
+Then enter the hub URL and token in the app. The app adds `http://` automatically if you enter only `host:port`.
 
 Common URLs:
 
