@@ -10,12 +10,14 @@ class InboxScreen extends StatefulWidget {
     required this.sessions,
     required this.onMarkRead,
     required this.onOpenSession,
+    this.onOpenDiffReview,
   });
 
   final List<HubInboxItem> items;
   final List<HubSession> sessions;
   final Future<void> Function(HubInboxItem item) onMarkRead;
   final ValueChanged<String> onOpenSession;
+  final ValueChanged<String>? onOpenDiffReview;
 
   @override
   State<InboxScreen> createState() => _InboxScreenState();
@@ -111,6 +113,13 @@ class _InboxScreenState extends State<InboxScreen> {
                       onOpenSession: _targetSessionId(item) == null
                           ? null
                           : () => widget.onOpenSession(_targetSessionId(item)!),
+                      onOpenAction:
+                          _targetDiffReviewId(item) == null ||
+                              widget.onOpenDiffReview == null
+                          ? null
+                          : () => widget.onOpenDiffReview!(
+                              _targetDiffReviewId(item)!,
+                            ),
                     );
                   },
                 ),
@@ -136,7 +145,14 @@ class _InboxScreenState extends State<InboxScreen> {
   String? _targetSessionId(HubInboxItem item) {
     final ref = item.actionRef;
     if (ref?.kind == 'session' && ref!.id.isNotEmpty) return ref.id;
+    if (ref?.kind == 'diff_review') return null;
     return item.sessionId;
+  }
+
+  String? _targetDiffReviewId(HubInboxItem item) {
+    final ref = item.actionRef;
+    if (ref?.kind == 'diff_review' && ref!.id.isNotEmpty) return ref.id;
+    return null;
   }
 }
 
@@ -259,6 +275,7 @@ class InboxItemCard extends StatelessWidget {
     required this.marking,
     required this.onMarkRead,
     required this.onOpenSession,
+    required this.onOpenAction,
   });
 
   final HubInboxItem item;
@@ -266,6 +283,7 @@ class InboxItemCard extends StatelessWidget {
   final bool marking;
   final VoidCallback? onMarkRead;
   final VoidCallback? onOpenSession;
+  final VoidCallback? onOpenAction;
 
   @override
   Widget build(BuildContext context) {
@@ -341,6 +359,15 @@ class InboxItemCard extends StatelessWidget {
                     label: const Text('Mark read'),
                   ),
                 const SizedBox(width: 8),
+                if (onOpenAction != null) ...[
+                  TextButton.icon(
+                    key: ValueKey('inbox-open-action-${item.id}'),
+                    onPressed: onOpenAction,
+                    icon: const Icon(Icons.rate_review),
+                    label: const Text('Review'),
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 TextButton.icon(
                   key: ValueKey('inbox-open-${item.id}'),
                   onPressed: onOpenSession,

@@ -69,8 +69,44 @@ class HubClient {
             _commandFromStreamData(data),
           );
         }
+        if (data['diffReview'] != null) {
+          snapshot = _upsertDiffReviewInSnapshot(
+            snapshot ?? HubSnapshot.empty(),
+            HubDiffReview.fromJson(_stringKeyMap(data['diffReview'] as Map)),
+          );
+        }
       }
       if (snapshot != null) yield snapshot;
+    }
+  }
+
+  Future<HubDiffReview> respondToDiffReview(
+    String id,
+    String action, {
+    String comment = '',
+  }) async {
+    final client = HttpClient();
+    try {
+      final request = await client.postUrl(
+        Uri.parse(
+          '$baseUrl/api/v2/diff-reviews/${Uri.encodeComponent(id)}/respond',
+        ),
+      );
+      request.headers.contentType = ContentType.json;
+      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+      request.write(jsonEncode({'action': action, 'comment': comment}));
+      final response = await request.close();
+      final body = await response.transform(utf8.decoder).join();
+      if (response.statusCode != 200) {
+        throw Exception('${response.statusCode}: $body');
+      }
+      final data = jsonDecode(body);
+      if (data is! Map || data['diffReview'] is! Map) {
+        throw Exception('Invalid diff review response');
+      }
+      return HubDiffReview.fromJson(_stringKeyMap(data['diffReview'] as Map));
+    } finally {
+      client.close(force: true);
     }
   }
 
@@ -179,6 +215,34 @@ HubSnapshot _upsertInboxItemInSnapshot(
     commands: snapshot.commands,
     approvals: snapshot.approvals,
     diffReviews: snapshot.diffReviews,
+    auditEvents: snapshot.auditEvents,
+    auditSummary: snapshot.auditSummary,
+  );
+}
+
+HubSnapshot _upsertDiffReviewInSnapshot(
+  HubSnapshot snapshot,
+  HubDiffReview review,
+) {
+  final reviews = [...snapshot.diffReviews];
+  final index = reviews.indexWhere((current) => current.id == review.id);
+  if (index >= 0) {
+    reviews[index] = review;
+  } else {
+    reviews.add(review);
+  }
+  reviews.sort(
+    (a, b) => (b.updatedAt ?? b.createdAt ?? 0).compareTo(
+      a.updatedAt ?? a.createdAt ?? 0,
+    ),
+  );
+  return HubSnapshot(
+    server: snapshot.server,
+    sessions: snapshot.sessions,
+    inboxItems: snapshot.inboxItems,
+    commands: snapshot.commands,
+    approvals: snapshot.approvals,
+    diffReviews: reviews,
     auditEvents: snapshot.auditEvents,
     auditSummary: snapshot.auditSummary,
   );

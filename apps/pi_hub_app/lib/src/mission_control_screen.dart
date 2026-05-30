@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'diff_review_screen.dart';
 import 'hub_models.dart';
 import 'inbox_screen.dart';
 import 'session_detail_screen.dart';
@@ -26,6 +27,7 @@ class MissionControlScreen extends StatelessWidget {
     required this.onShutdown,
     required this.onModel,
     required this.onMarkInboxRead,
+    required this.onRespondToDiffReview,
   });
 
   final HubSnapshot? snapshot;
@@ -44,6 +46,12 @@ class MissionControlScreen extends StatelessWidget {
   final VoidCallback onShutdown;
   final VoidCallback onModel;
   final Future<void> Function(HubInboxItem item) onMarkInboxRead;
+  final Future<void> Function(
+    HubDiffReview review,
+    String action,
+    String comment,
+  )
+  onRespondToDiffReview;
 
   List<HubSession> get _sessions => snapshot?.sessions ?? const [];
 
@@ -134,6 +142,7 @@ class MissionControlScreen extends StatelessWidget {
                       onSelected(id);
                       DefaultTabController.of(tabContext).animateTo(2);
                     },
+                    onOpenDiffReview: (id) => _openDiffReview(context, id),
                   ),
                   selected == null
                       ? const Center(child: Text('No Pi sessions connected'))
@@ -150,6 +159,31 @@ class MissionControlScreen extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  void _openDiffReview(BuildContext context, String id) {
+    HubDiffReview? review;
+    for (final candidate in snapshot?.diffReviews ?? const <HubDiffReview>[]) {
+      if (candidate.id == id) {
+        review = candidate;
+        break;
+      }
+    }
+    if (review == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Diff review not found: $id')));
+      return;
+    }
+    final selectedReview = review;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => DiffReviewScreen(
+          review: selectedReview,
+          onRespond: onRespondToDiffReview,
         ),
       ),
     );
@@ -190,6 +224,7 @@ class MissionControlScreen extends StatelessWidget {
             sessions: _sessions,
             onMarkRead: onMarkInboxRead,
             onOpenSession: onSelected,
+            onOpenDiffReview: (id) => _openDiffReview(context, id),
           ),
         ),
       ],

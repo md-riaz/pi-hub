@@ -186,6 +186,47 @@ class _HubHomePageState extends State<HubHomePage> {
     });
   }
 
+  Future<void> _respondToDiffReview(
+    HubDiffReview review,
+    String action,
+    String comment,
+  ) async {
+    final updated = await _client.respondToDiffReview(
+      review.id,
+      action,
+      comment: comment,
+    );
+    if (!mounted || _snapshot == null) return;
+    setState(() {
+      _snapshot = _upsertDiffReview(_snapshot!, updated);
+    });
+  }
+
+  HubSnapshot _upsertDiffReview(HubSnapshot snapshot, HubDiffReview review) {
+    final diffReviews = [...snapshot.diffReviews];
+    final index = diffReviews.indexWhere((current) => current.id == review.id);
+    if (index >= 0) {
+      diffReviews[index] = review;
+    } else {
+      diffReviews.add(review);
+    }
+    diffReviews.sort(
+      (a, b) => (b.updatedAt ?? b.createdAt ?? 0).compareTo(
+        a.updatedAt ?? a.createdAt ?? 0,
+      ),
+    );
+    return HubSnapshot(
+      server: snapshot.server,
+      sessions: snapshot.sessions,
+      inboxItems: snapshot.inboxItems,
+      commands: snapshot.commands,
+      approvals: snapshot.approvals,
+      diffReviews: diffReviews,
+      auditEvents: snapshot.auditEvents,
+      auditSummary: snapshot.auditSummary,
+    );
+  }
+
   HubSnapshot _upsertInboxItem(HubSnapshot snapshot, HubInboxItem item) {
     final inboxItems = [...snapshot.inboxItems];
     final index = inboxItems.indexWhere((current) => current.id == item.id);
@@ -253,6 +294,7 @@ class _HubHomePageState extends State<HubHomePage> {
       onShutdown: () => _runControl('shutdown'),
       onModel: _pickModel,
       onMarkInboxRead: _markInboxRead,
+      onRespondToDiffReview: _respondToDiffReview,
     );
   }
 }
