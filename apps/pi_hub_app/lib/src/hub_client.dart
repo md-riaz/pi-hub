@@ -126,7 +126,7 @@ class CollaborationSendResult {
 }
 
 class HubClient {
-  String baseUrl = 'http://10.0.2.2:17878';
+  String baseUrl = '';
   String token = '';
   HttpClient? _streamClient;
 

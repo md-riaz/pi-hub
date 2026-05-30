@@ -33,7 +33,7 @@ class _BroadcastSheetState extends State<BroadcastSheet> {
   final Set<String> _selected = {};
   String _selectedModel = 'Use current';
 
-  static const _models = ['Use current', 'Sonnet 4', 'Opus 4.5', 'GPT-5', 'Haiku 4'];
+  List<String> get _models => ['Use current', ...{...widget.sessions.map((s) => s.model)}];
 
   @override
   void initState() {

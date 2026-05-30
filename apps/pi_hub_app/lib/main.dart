@@ -7,6 +7,8 @@ import 'src/hub_client.dart';
 import 'src/hub_models.dart';
 import 'src/theme/hub_theme.dart';
 import 'src/screens/mission_control_screen.dart';
+import 'src/widgets/new_session_sheet.dart';
+import 'src/widgets/broadcast_sheet.dart';
 
 void main() {
   runApp(const PiHubApp());
@@ -36,10 +38,9 @@ class HubHomePage extends StatefulWidget {
 class _HubHomePageState extends State<HubHomePage> {
   static const _prefServerUrl = 'hub_server_url';
   static const _prefToken = 'hub_token';
+  static const _prefRecentConnections = 'hub_recent_connections';
 
-  final TextEditingController _serverController = TextEditingController(
-    text: 'http://10.0.2.2:17878',
-  );
+  final TextEditingController _serverController = TextEditingController();
   final TextEditingController _tokenController = TextEditingController();
   final HubClient _client = HubClient();
 
@@ -49,6 +50,7 @@ class _HubHomePageState extends State<HubHomePage> {
   String _connectionState = 'Disconnected';
   String? _connectionError;
   bool _connecting = false;
+  List<Map<String, String>> _recentConnections = [];
 
   bool get _connected =>
       _snapshot != null && !_connectionState.startsWith('Failed');
@@ -78,6 +80,13 @@ class _HubHomePageState extends State<HubHomePage> {
     if (savedToken != null && savedToken.isNotEmpty) {
       _tokenController.text = savedToken;
     }
+    final recentJson = prefs.getStringList(_prefRecentConnections);
+    if (recentJson != null) {
+      _recentConnections = recentJson.map((e) {
+        final parts = e.split('|||');
+        return {'name': parts[0], 'url': parts.length > 1 ? parts[1] : '', 'token': parts.length > 2 ? parts[2] : ''};
+      }).toList();
+    }
     if (savedUrl != null &&
         savedUrl.isNotEmpty &&
         savedToken != null &&
@@ -90,6 +99,17 @@ class _HubHomePageState extends State<HubHomePage> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_prefServerUrl, _serverController.text);
     await prefs.setString(_prefToken, _tokenController.text);
+    // Update recent connections
+    final url = _serverController.text.trim();
+    final token = _tokenController.text.trim();
+    if (url.isNotEmpty && token.isNotEmpty) {
+      final name = Uri.tryParse(url)?.host ?? url;
+      _recentConnections.removeWhere((c) => c['url'] == url);
+      _recentConnections.insert(0, {'name': name, 'url': url, 'token': token});
+      if (_recentConnections.length > 5) _recentConnections = _recentConnections.sublist(0, 5);
+      await prefs.setStringList(_prefRecentConnections,
+        _recentConnections.map((c) => '${c['name']}|||${c['url']}|||${c['token']}').toList());
+    }
   }
 
   String _connectionErrorHelp(Object error) {
@@ -249,9 +269,47 @@ class _HubHomePageState extends State<HubHomePage> {
       onModelChanged: (modelId) => _runControl('set_model', modelId: modelId),
       onPause: () => _runControl('abort'),
       onStop: () => _runControl('shutdown'),
-      onNewSession: () {},
-      onBroadcast: () {},
+      onNewSession: () {
+        NewSessionSheet.show(
+          context,
+          client: _client,
+          availableModels: _snapshot?.sessions.isNotEmpty == true
+              ? _snapshot!.sessions.first.availableModels.map((m) => m.id).toList()
+              : [],
+          onStart: (result) async {
+            try {
+              await _client.createAgent(
+                AgentCreateRequest(cwd: result.path, initialPrompt: result.prompt, model: result.model),
+              );
+              if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Session created')));
+            } catch (e) {
+              if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Create failed: $e')));
+            }
+          },
+        );
+      },
+      onBroadcast: () {
+        BroadcastSheet.show(
+          context,
+          sessions: _snapshot?.sessions ?? [],
+          onSend: (result) async {
+            for (final sid in result.sessionIds) {
+              try {
+                await _client.sendMessage(sid, '[Broadcast] ${result.prompt}');
+              } catch (e) {
+                if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Broadcast to $sid failed: $e')));
+              }
+            }
+            if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Broadcast sent to ${result.sessionIds.length} sessions')));
+          },
+        );
+      },
       onDisconnect: _disconnect,
+      onRecentConnection: (conn) {
+        _serverController.text = conn['url'] ?? '';
+        _tokenController.text = conn['token'] ?? '';
+      },
+      recentConnections: _recentConnections,
     );
   }
 }

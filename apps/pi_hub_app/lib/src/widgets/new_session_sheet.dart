@@ -13,15 +13,16 @@ class NewSessionResult {
 class NewSessionSheet extends StatefulWidget {
   final ValueChanged<NewSessionResult> onStart;
   final HubClient? client;
+  final List<String> availableModels;
 
-  const NewSessionSheet({super.key, required this.onStart, this.client});
+  const NewSessionSheet({super.key, required this.onStart, this.client, this.availableModels = const []});
 
-  static Future<void> show(BuildContext context, {required ValueChanged<NewSessionResult> onStart, HubClient? client}) {
+  static Future<void> show(BuildContext context, {required ValueChanged<NewSessionResult> onStart, HubClient? client, List<String> availableModels = const []}) {
     return showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => NewSessionSheet(onStart: onStart, client: client),
+      builder: (_) => NewSessionSheet(onStart: onStart, client: client, availableModels: availableModels),
     );
   }
 
@@ -30,11 +31,17 @@ class NewSessionSheet extends StatefulWidget {
 }
 
 class _NewSessionSheetState extends State<NewSessionSheet> {
-  final _pathController = TextEditingController(text: '/home/user/projects');
+  final _pathController = TextEditingController(text: '');
   final _promptController = TextEditingController();
-  String _selectedModel = 'Sonnet 4';
+  late String _selectedModel;
 
-  static const _models = ['Sonnet 4', 'Opus 4.5', 'GPT-5', 'Haiku 4'];
+  List<String> get _models => widget.availableModels.isEmpty ? ['default'] : widget.availableModels;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedModel = _models.first;
+  }
 
   @override
   void dispose() {

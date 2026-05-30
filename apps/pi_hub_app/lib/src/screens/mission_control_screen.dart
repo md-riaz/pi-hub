@@ -29,6 +29,8 @@ class MissionControlScreen extends StatefulWidget {
   final VoidCallback? onBroadcast;
   final VoidCallback? onDisconnect;
   final HubClient client;
+  final List<Map<String, String>> recentConnections;
+  final ValueChanged<Map<String, String>>? onRecentConnection;
 
   const MissionControlScreen({
     super.key,
@@ -55,6 +57,8 @@ class MissionControlScreen extends StatefulWidget {
     this.onBroadcast,
     this.onDisconnect,
     required this.client,
+    this.recentConnections = const [],
+    this.onRecentConnection,
   });
 
   @override
@@ -72,6 +76,8 @@ class _MissionControlScreenState extends State<MissionControlScreen> {
         connecting: widget.connecting,
         error: widget.connectionError,
         onConnect: widget.onConnect,
+        recentConnections: widget.recentConnections,
+        onRecentConnection: widget.onRecentConnection,
       );
     }
 

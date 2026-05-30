@@ -49,8 +49,6 @@ class ModelSheet extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(m, style: const TextStyle(color: HubTheme.text, fontSize: 14, fontWeight: FontWeight.w600)),
-                        const SizedBox(height: 2),
-                        Text(m.contains('Opus') ? 'Best reasoning' : m.contains('Haiku') ? 'Fast' : 'Balanced coding', style: HubTheme.caption),
                       ],
                     ),
                   ),

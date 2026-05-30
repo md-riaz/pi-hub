@@ -152,13 +152,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             child: ListView(
               scrollDirection: Axis.horizontal,
               children: [
-                _Chip(icon: Icons.account_tree, text: widget.session.cwd.split('/').last),
+                _Chip(icon: Icons.account_tree, text: widget.session.displayName),
                 const SizedBox(width: 8),
                 _Chip(icon: Icons.auto_awesome, text: _currentModel),
                 const SizedBox(width: 8),
                 _Chip(icon: Icons.folder, text: widget.session.cwd.split('/').last),
-                const SizedBox(width: 8),
-                _Chip(icon: Icons.flash_on, text: 'Compact stream'),
               ],
             ),
           ),

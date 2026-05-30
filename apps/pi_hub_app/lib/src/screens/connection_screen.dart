@@ -7,6 +7,8 @@ class ConnectionScreen extends StatefulWidget {
   final bool connecting;
   final String? error;
   final VoidCallback onConnect;
+  final List<Map<String, String>> recentConnections;
+  final ValueChanged<Map<String, String>>? onRecentConnection;
 
   const ConnectionScreen({
     super.key,
@@ -15,6 +17,8 @@ class ConnectionScreen extends StatefulWidget {
     required this.connecting,
     this.error,
     required this.onConnect,
+    this.recentConnections = const [],
+    this.onRecentConnection,
   });
 
   @override
@@ -22,6 +26,22 @@ class ConnectionScreen extends StatefulWidget {
 }
 
 class _ConnectionScreenState extends State<ConnectionScreen> {
+  @override
+  void initState() {
+    super.initState();
+    widget.serverController.addListener(_onChanged);
+    widget.tokenController.addListener(_onChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.serverController.removeListener(_onChanged);
+    widget.tokenController.removeListener(_onChanged);
+    super.dispose();
+  }
+
+  void _onChanged() => setState(() {});
+
   @override
   Widget build(BuildContext context) {
     final canConnect = widget.serverController.text.trim().isNotEmpty &&
@@ -140,20 +160,24 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                 child: Text('RECENT CONNECTIONS', style: HubTheme.caption.copyWith(fontWeight: FontWeight.w700, letterSpacing: 1)),
               ),
               const SizedBox(height: 12),
-              _RecentConn(name: 'Home Lab', url: 'http://100.101.44.8:8787', onTap: () {
-                widget.serverController.text = 'http://100.101.44.8:8787';
-                widget.tokenController.text = 'home-lab-token';
-              }),
-              const SizedBox(height: 8),
-              _RecentConn(name: 'VPS', url: 'https://pi-hub.riyaz.dev', onTap: () {
-                widget.serverController.text = 'https://pi-hub.riyaz.dev';
-                widget.tokenController.text = 'vps-token';
-              }),
-              const SizedBox(height: 8),
-              _RecentConn(name: 'Office Tunnel', url: 'http://192.168.1.100:8080', onTap: () {
-                widget.serverController.text = 'http://192.168.1.100:8080';
-                widget.tokenController.text = 'office-token';
-              }),
+              if (widget.recentConnections.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Text('No recent connections', style: HubTheme.caption),
+                )
+              else
+                ...widget.recentConnections.map((conn) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _RecentConn(
+                    name: conn['name'] ?? '',
+                    url: conn['url'] ?? '',
+                    onTap: () {
+                      widget.serverController.text = conn['url'] ?? '';
+                      widget.tokenController.text = conn['token'] ?? '';
+                      widget.onRecentConnection?.call(conn);
+                    },
+                  ),
+                )),
               const SizedBox(height: 40),
             ],
           ),
