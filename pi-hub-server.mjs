@@ -18,6 +18,7 @@ const DEFAULT_CONFIG = {
   port: 17878,
   token: "",
   historyLimit: 500,
+  staleThresholdMs: 120_000,
 };
 
 function ensureConfig() {
@@ -32,6 +33,8 @@ function ensureConfig() {
   if (!Number.isFinite(Number(config.port))) config.port = DEFAULT_CONFIG.port;
   if (!config.host || typeof config.host !== "string") config.host = DEFAULT_CONFIG.host;
   if (!Number.isFinite(Number(config.historyLimit))) config.historyLimit = DEFAULT_CONFIG.historyLimit;
+  if (!Number.isFinite(Number(config.staleThresholdMs))) config.staleThresholdMs = DEFAULT_CONFIG.staleThresholdMs;
+  config.staleThresholdMs = Math.max(0, Number(config.staleThresholdMs));
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
   return config;
 }
@@ -41,6 +44,7 @@ const sessions = new Map();
 const commandQueues = new Map();
 const watchers = new Set();
 let eventSeq = 0;
+let normalizedEventSeq = 0;
 
 function nowIso() {
   return new Date().toISOString();
@@ -64,7 +68,17 @@ function sanitizeItem(item) {
   return next;
 }
 
+function contextPercent(contextUsage) {
+  if (!contextUsage || typeof contextUsage !== "object") return undefined;
+  if (Number.isFinite(Number(contextUsage.percent))) return Number(contextUsage.percent);
+  const used = Number(contextUsage.tokens ?? contextUsage.usedTokens);
+  const total = Number(contextUsage.contextWindow ?? contextUsage.maxTokens ?? contextUsage.totalTokens);
+  if (Number.isFinite(used) && Number.isFinite(total) && total > 0) return (used / total) * 100;
+  return undefined;
+}
+
 function publicSession(session) {
+  const health = deriveSessionHealth(session);
   return {
     id: session.id,
     name: session.name,
@@ -81,6 +95,21 @@ function publicSession(session) {
     tools: Array.from(session.tools.values()),
     availableModels: session.availableModels || [],
     lastEvent: session.lastEvent,
+    health,
+  };
+}
+
+function serverCapabilities() {
+  return {
+    schemaVersion: 2,
+    eventEnvelope: true,
+    health: true,
+    inbox: false,
+    commandLifecycle: false,
+    approvals: false,
+    diffReviews: false,
+    agentCreation: false,
+    pushDevices: false,
   };
 }
 
@@ -93,6 +122,9 @@ function snapshot() {
       port: Number(config.port),
       time: nowIso(),
       version: "1.0.0",
+      schemaVersion: 2,
+      staleThresholdMs: Number(config.staleThresholdMs),
+      capabilities: serverCapabilities(),
     },
     sessions: Array.from(sessions.values())
       .sort((a, b) => String(a.cwd).localeCompare(String(b.cwd)) || String(a.name || a.id).localeCompare(String(b.name || b.id)))
@@ -162,6 +194,86 @@ function broadcast(payload) {
     try { res.write(text); }
     catch { watchers.delete(res); }
   }
+}
+
+function mapLegacyEventType(type) {
+  const map = {
+    history: "session.history",
+    presence: "session.presence",
+    register: "session.registered",
+    unregister: "session.unregistered",
+    agent_start: "session.agent_start",
+    agent_end: "session.agent_end",
+    message_update: "session.message_update",
+    message_end: "session.message_end",
+    tool_start: "session.tool_start",
+    tool_update: "session.tool_update",
+    tool_end: "session.tool_end",
+    input: "session.input",
+    command_received: "command.result",
+    command_queued: "command.queued",
+    model_select: "session.model_select",
+    thinking_level_select: "session.thinking_level_select",
+  };
+  return map[type] || type || "session.event";
+}
+
+function unmapV2EventType(type) {
+  const map = {
+    "session.history": "history",
+    "session.presence": "presence",
+    "session.registered": "register",
+    "session.unregistered": "unregister",
+    "session.agent_start": "agent_start",
+    "session.agent_end": "agent_end",
+    "session.message_update": "message_update",
+    "session.message_end": "message_end",
+    "session.tool_start": "tool_start",
+    "session.tool_update": "tool_update",
+    "session.tool_end": "tool_end",
+    "session.input": "input",
+    "command.result": "command_received",
+    "command.queued": "command_queued",
+    "session.model_select": "model_select",
+    "session.thinking_level_select": "thinking_level_select",
+  };
+  return map[type] || type;
+}
+
+function inferSeverity(type, payload = {}) {
+  if (payload.severity) return String(payload.severity);
+  if (payload.tool?.isError || payload.error || type === "command.result" && payload.applied === false) return "error";
+  if (payload.attention) return "warning";
+  return "info";
+}
+
+function normalizeEvent(input = {}, fallbackSessionId, fallbackType = "session.event") {
+  const source = input && typeof input === "object" ? input : {};
+  const schemaVersion = Number(source.schemaVersion) === 2 ? 2 : 1;
+  const payload = schemaVersion === 2 && source.payload && typeof source.payload === "object"
+    ? { ...source.payload }
+    : { ...source };
+  for (const key of ["schemaVersion", "id", "seq", "actor", "severity", "attention", "payload", "type", "sessionId"]) delete payload[key];
+  const incomingType = String(source.type || fallbackType);
+  const type = schemaVersion === 2 ? incomingType : mapLegacyEventType(incomingType);
+  const legacyType = schemaVersion === 2 ? unmapV2EventType(incomingType) : incomingType;
+  const sessionId = source.sessionId || fallbackSessionId;
+  const severitySource = schemaVersion === 2 ? { ...payload, severity: source.severity, attention: source.attention } : source;
+  const normalized = {
+    schemaVersion: 2,
+    id: typeof source.id === "string" && source.id ? source.id : `evt_${crypto.randomUUID()}`,
+    seq: ++normalizedEventSeq,
+    type,
+    legacyType,
+    sessionId: typeof sessionId === "string" ? sessionId : undefined,
+    actor: source.actor && typeof source.actor === "object" ? source.actor : { kind: sessionId ? "agent" : "server", id: sessionId || "pi-hub" },
+    timestamp: Number.isFinite(Number(source.timestamp)) ? Number(source.timestamp) : Date.now(),
+    severity: inferSeverity(type, severitySource),
+    attention: Boolean(source.attention || payload.tool?.isError || payload.error),
+    payload,
+    raw: source,
+  };
+  return normalized;
 }
 
 function touchSession(session, patch = {}) {
@@ -266,8 +378,84 @@ function handleHubEvent(session, event) {
   }
 }
 
+function applyEvent(event) {
+  if (!event?.sessionId) return undefined;
+  const session = touchSession(getOrCreateSession(event.sessionId));
+  const legacyEvent = { ...event.payload, type: event.legacyType || event.type };
+  if (event.type === "session.registered") {
+    const info = event.payload.session && typeof event.payload.session === "object" ? event.payload.session : event.payload;
+    Object.assign(session, {
+      name: info.name,
+      cwd: info.cwd || "",
+      model: info.model || "unknown",
+      pid: Number(info.pid || 0),
+      startedAt: Number(info.startedAt || Date.now()),
+      status: info.status || "idle",
+      contextUsage: info.contextUsage,
+      availableModels: Array.isArray(info.availableModels) ? info.availableModels : [],
+    });
+    if (Array.isArray(info.history)) session.history = info.history.map(sanitizeItem).slice(-Number(config.historyLimit));
+  } else if (event.type === "session.unregistered") {
+    session.online = false;
+    session.status = "offline";
+    session.lastSeen = Date.now();
+    session.tools.clear();
+  } else {
+    handleHubEvent(session, legacyEvent);
+  }
+  session.lastEvent = event;
+  return session;
+}
+
+function deriveSessionHealth(session) {
+  const lastSeen = Number(session.lastSeen || 0);
+  const age = lastSeen ? Math.max(0, Date.now() - lastSeen) : undefined;
+  const tools = Array.from(session.tools?.values?.() || []);
+  const runningToolCount = tools.filter(tool => tool?.status === "running").length;
+  const pendingCommandCount = (commandQueues.get(session.id) || []).length;
+  const attentionReasons = [];
+  const explicitOffline = session.online === false || session.status === "offline";
+  const isStale = !explicitOffline && age !== undefined && Number(config.staleThresholdMs) > 0 && age > Number(config.staleThresholdMs);
+  const hasToolError = tools.some(tool => tool?.status === "error" || tool?.isError);
+  const lastEventAge = Number.isFinite(Number(session.lastEvent?.timestamp)) ? Date.now() - Number(session.lastEvent.timestamp) : 0;
+  const recentWindowMs = Number(config.staleThresholdMs) > 0 ? Number(config.staleThresholdMs) * 2 : Number.POSITIVE_INFINITY;
+  const recentLastEvent = lastEventAge <= recentWindowMs;
+  const hasCommandFailure = recentLastEvent && session.lastEvent?.type === "command.result" && session.lastEvent?.payload?.applied === false;
+  const errorPayload = session.lastEvent?.payload || {};
+  const hasAgentError = recentLastEvent && (session.lastEvent?.severity === "error" || (errorPayload.error && session.lastEvent?.type !== "command.queued"));
+  const pendingActionType = recentLastEvent ? session.lastEvent?.type : undefined;
+  const hasPendingApproval = pendingActionType === "approval.requested" || pendingActionType === "approval_requested";
+  const hasPendingDiff = pendingActionType === "diff_review.requested" || pendingActionType === "diff_review_requested";
+
+  if (explicitOffline) attentionReasons.push("offline");
+  if (isStale) attentionReasons.push("stale");
+  if (hasPendingApproval) attentionReasons.push("approval_pending");
+  if (hasPendingDiff) attentionReasons.push("diff_review_pending");
+  if (hasToolError) attentionReasons.push("tool_error");
+  if (hasCommandFailure) attentionReasons.push("command_failure");
+  else if (hasAgentError && !hasToolError) attentionReasons.push("agent_error");
+
+  let state = "idle";
+  if (!session.id) state = "unknown";
+  else if (explicitOffline) state = "offline";
+  else if (isStale) state = "stale";
+  else if (hasPendingApproval || hasPendingDiff || session.status === "blocked") state = "blocked";
+  else if (hasToolError || hasCommandFailure || hasAgentError) state = "error";
+  else if (runningToolCount > 0 || session.status === "thinking" || session.liveMessage) state = "active";
+
+  return {
+    state,
+    lastSeenAgeMs: age,
+    attention: attentionReasons.length > 0,
+    attentionReasons,
+    runningToolCount,
+    pendingCommandCount,
+    contextPercent: contextPercent(session.contextUsage),
+  };
+}
+
 function requireSessionId(body) {
-  const sessionId = body?.sessionId || body?.session?.id;
+  const sessionId = body?.sessionId || body?.session?.id || body?.event?.sessionId;
   if (!sessionId || typeof sessionId !== "string") throw new Error("sessionId required");
   return sessionId;
 }
@@ -347,18 +535,9 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       const info = body.session || body;
       if (!info?.id || typeof info.id !== "string") throw new Error("session.id required");
-      const session = touchSession(getOrCreateSession(info.id), {
-        name: info.name,
-        cwd: info.cwd || "",
-        model: info.model || "unknown",
-        pid: Number(info.pid || 0),
-        startedAt: Number(info.startedAt || Date.now()),
-        status: info.status || "idle",
-        contextUsage: info.contextUsage,
-        availableModels: Array.isArray(info.availableModels) ? info.availableModels : [],
-      });
-      if (Array.isArray(info.history)) session.history = info.history.map(sanitizeItem).slice(-Number(config.historyLimit));
-      broadcast({ type: "session_updated", reason: "register", session: publicSession(session) });
+      const event = normalizeEvent({ ...info, type: "register" }, info.id, "register");
+      const session = applyEvent(event);
+      broadcast({ type: "session_updated", reason: "register", session: publicSession(session), event });
       sendJson(res, 200, { ok: true, session: publicSession(session) });
       return;
     }
@@ -366,12 +545,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/unregister") {
       const body = await readBody(req);
       const sessionId = requireSessionId(body);
-      const session = getOrCreateSession(sessionId);
-      session.online = false;
-      session.status = "offline";
-      session.lastSeen = Date.now();
-      session.tools.clear();
-      broadcast({ type: "session_updated", reason: "unregister", session: publicSession(session) });
+      const event = normalizeEvent({ ...body, type: "unregister" }, sessionId, "unregister");
+      const session = applyEvent(event);
+      broadcast({ type: "session_updated", reason: "unregister", session: publicSession(session), event });
       sendJson(res, 200, { ok: true });
       return;
     }
@@ -379,15 +555,20 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/presence") {
       const body = await readBody(req);
       const sessionId = requireSessionId(body);
-      const session = touchSession(getOrCreateSession(sessionId), {
-        name: body.name,
-        cwd: body.cwd ?? getOrCreateSession(sessionId).cwd,
-        model: body.model ?? getOrCreateSession(sessionId).model,
-        status: body.status ?? getOrCreateSession(sessionId).status,
-        contextUsage: body.contextUsage,
-        availableModels: Array.isArray(body.availableModels) ? body.availableModels : getOrCreateSession(sessionId).availableModels,
-      });
-      broadcast({ type: "session_updated", reason: "presence", session: publicSession(session) });
+      const current = getOrCreateSession(sessionId);
+      const event = normalizeEvent({
+        ...body,
+        type: "presence",
+        cwd: body.cwd ?? current.cwd,
+        model: body.model ?? current.model,
+        status: body.status ?? current.status,
+        availableModels: Array.isArray(body.availableModels) ? body.availableModels : current.availableModels,
+      }, sessionId, "presence");
+      const session = applyEvent(event);
+      if (typeof body.name !== "undefined") session.name = body.name;
+      if (typeof event.payload.cwd !== "undefined") session.cwd = event.payload.cwd;
+      if (Array.isArray(event.payload.availableModels)) session.availableModels = event.payload.availableModels;
+      broadcast({ type: "session_updated", reason: "presence", session: publicSession(session), event });
       sendJson(res, 200, { ok: true });
       return;
     }
@@ -395,10 +576,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/event") {
       const body = await readBody(req);
       const sessionId = requireSessionId(body);
-      const event = body.event;
-      const session = touchSession(getOrCreateSession(sessionId));
-      handleHubEvent(session, event);
-      broadcast({ type: "session_updated", reason: event?.type || "event", session: publicSession(session), event });
+      const event = normalizeEvent(body.event, sessionId);
+      const session = applyEvent(event);
+      broadcast({ type: "session_updated", reason: event.legacyType || event.type || "event", session: publicSession(session), event });
       sendJson(res, 200, { ok: true });
       return;
     }
@@ -413,7 +593,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const command = {
-        id: crypto.randomUUID(),
+        id: `cmd_${crypto.randomUUID()}`,
         type: "user_message",
         text,
         timestamp: Date.now(),
@@ -421,7 +601,8 @@ const server = http.createServer(async (req, res) => {
       if (!commandQueues.has(sessionId)) commandQueues.set(sessionId, []);
       commandQueues.get(sessionId).push(command);
       const session = getOrCreateSession(sessionId);
-      session.lastEvent = { type: "command_queued", command: { id: command.id, type: command.type, timestamp: command.timestamp } };
+      const event = normalizeEvent({ type: "command_queued", command: { id: command.id, type: command.type, timestamp: command.timestamp } }, sessionId, "command_queued");
+      session.lastEvent = event;
       broadcast({ type: "command_queued", sessionId, command: { ...command, text: undefined } });
       sendJson(res, 200, { ok: true, commandId: command.id });
       return;
@@ -439,7 +620,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const command = {
-        id: crypto.randomUUID(),
+        id: `cmd_${crypto.randomUUID()}`,
         type: action,
         modelId: typeof body.modelId === "string" ? body.modelId : undefined,
         timestamp: Date.now(),
@@ -447,7 +628,8 @@ const server = http.createServer(async (req, res) => {
       if (!commandQueues.has(sessionId)) commandQueues.set(sessionId, []);
       commandQueues.get(sessionId).push(command);
       const session = getOrCreateSession(sessionId);
-      session.lastEvent = { type: "command_queued", command: { id: command.id, type: command.type, timestamp: command.timestamp } };
+      const event = normalizeEvent({ type: "command_queued", command: { id: command.id, type: command.type, timestamp: command.timestamp } }, sessionId, "command_queued");
+      session.lastEvent = event;
       broadcast({ type: "command_queued", sessionId, command: { id: command.id, type: command.type, timestamp: command.timestamp } });
       sendJson(res, 200, { ok: true, commandId: command.id });
       return;
