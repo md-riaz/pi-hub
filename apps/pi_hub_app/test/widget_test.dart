@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:pi_hub_app/main.dart';
+import 'package:pi_hub_app/src/approval_sheet.dart';
 import 'package:pi_hub_app/src/hub_client.dart';
 import 'package:pi_hub_app/src/hub_models.dart';
 import 'package:pi_hub_app/src/inbox_screen.dart';
@@ -83,6 +84,67 @@ void main() {
     });
     expect(items.single.id, 'inbox-one');
     expect(items.single.unread, isFalse);
+  });
+
+  test('HubClient respondToApproval calls v2 approval API', () async {
+    final previousOverrides = HttpOverrides.current;
+    HttpOverrides.global = null;
+    addTearDown(() => HttpOverrides.global = previousOverrides);
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    final requestSeen = Completer<Map<String, Object?>>();
+    server.listen((request) async {
+      final body = await utf8.decoder.bind(request).join();
+      requestSeen.complete({
+        'method': request.method,
+        'path': request.uri.path,
+        'authorization': request.headers.value(HttpHeaders.authorizationHeader),
+        'body': body,
+      });
+      request.response.headers.contentType = ContentType.json;
+      request.response.write(
+        jsonEncode({
+          'ok': true,
+          'approval': {
+            'id': 'approval-one',
+            'sessionId': 'session-one',
+            'status': 'rejected',
+            'responseComment': 'not safe',
+          },
+          'command': {
+            'id': 'cmd-approval',
+            'sessionId': 'session-one',
+            'type': 'approval_response',
+            'status': 'queued',
+          },
+        }),
+      );
+      await request.response.close();
+    });
+
+    final client = HubClient()
+      ..configure(
+        baseUrl: 'http://${server.address.host}:${server.port}/',
+        token: 'secret',
+      );
+    addTearDown(client.close);
+
+    final result = await client.respondToApproval(
+      'approval-one',
+      'reject',
+      comment: 'not safe',
+    );
+    final request = await requestSeen.future;
+
+    expect(request['method'], 'POST');
+    expect(request['path'], '/api/v2/approvals/approval-one/respond');
+    expect(request['authorization'], 'Bearer secret');
+    expect(jsonDecode(request['body']! as String), {
+      'response': 'reject',
+      'comment': 'not safe',
+    });
+    expect(result?.status, 'rejected');
+    expect(result?.responseComment, 'not safe');
   });
 
   testWidgets('Mission control renders health cards from fixture', (
@@ -187,6 +249,8 @@ void main() {
             sessions: snapshot.sessions,
             onMarkRead: (item) async => marked = item,
             onOpenSession: (id) => opened = id,
+            approvals: const [],
+            onApprovalResponse: (approval, response, comment) async {},
           ),
         ),
       ),
@@ -211,6 +275,130 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('inbox-open-inbox-unread')));
     await tester.pump();
     expect(opened, 'session-inbox');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Approval sheet submits reject comment', (
+    WidgetTester tester,
+  ) async {
+    final approval = HubApprovalRequest.fromJson({
+      'id': 'approval-widget',
+      'sessionId': 'session-approval',
+      'title': 'Approve migration',
+      'body': 'Apply schema migration in staging?',
+      'risk': 'high',
+      'choices': ['approve', 'reject'],
+      'status': 'pending',
+    });
+    String? response;
+    String? comment;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(useMaterial3: true),
+        home: Scaffold(
+          body: ApprovalSheet(
+            approval: approval,
+            onRespond: (nextResponse, nextComment) async {
+              response = nextResponse;
+              comment = nextComment;
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('approval-sheet-title')), findsOneWidget);
+    expect(find.text('Approve migration'), findsOneWidget);
+    expect(find.text('Apply schema migration in staging?'), findsOneWidget);
+    expect(find.text('Risk: high'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('approval-comment-field')),
+      'Need safer rollout',
+    );
+    await tester.tap(find.byKey(const ValueKey('approval-choice-reject')));
+    await tester.pumpAndSettle();
+
+    expect(response, 'reject');
+    expect(comment, 'Need safer rollout');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Inbox opens approval and submits reject comment', (
+    WidgetTester tester,
+  ) async {
+    final snapshot = HubSnapshot.fromJson({
+      'sessions': [
+        {
+          'id': 'session-approval',
+          'name': 'Approval Agent',
+          'cwd': '/workspace/approval',
+          'model': 'gpt-5-codex',
+          'pid': 903,
+          'status': 'idle',
+          'online': true,
+        },
+      ],
+      'inboxItems': [
+        {
+          'id': 'inbox-approval',
+          'sessionId': 'session-approval',
+          'type': 'approval',
+          'severity': 'warning',
+          'title': 'Approval needed',
+          'body': 'Agent requests permission',
+          'readAt': null,
+          'actionRef': {'kind': 'approval', 'id': 'approval-widget'},
+        },
+      ],
+      'approvals': [
+        {
+          'id': 'approval-widget',
+          'sessionId': 'session-approval',
+          'title': 'Approve migration',
+          'body': 'Apply schema migration in staging?',
+          'risk': 'high',
+          'choices': ['approve', 'reject'],
+          'status': 'pending',
+        },
+      ],
+    });
+    String? response;
+    String? comment;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(useMaterial3: true),
+        home: Scaffold(
+          body: InboxScreen(
+            items: snapshot.inboxItems,
+            sessions: snapshot.sessions,
+            onMarkRead: (_) async {},
+            onOpenSession: (_) {},
+            approvals: snapshot.approvals,
+            onApprovalResponse: (_, nextResponse, nextComment) async {
+              response = nextResponse;
+              comment = nextComment;
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('inbox-open-inbox-approval')));
+    await tester.pumpAndSettle();
+    expect(find.text('Approve migration'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('approval-comment-field')),
+      'Need safer rollout',
+    );
+    await tester.tap(find.byKey(const ValueKey('approval-choice-reject')));
+    await tester.pumpAndSettle();
+
+    expect(response, 'reject');
+    expect(comment, 'Need safer rollout');
     expect(tester.takeException(), isNull);
   });
 

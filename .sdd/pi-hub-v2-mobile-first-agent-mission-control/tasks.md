@@ -125,7 +125,7 @@ Each task uses:
   - Evidence: Widget test injects stream event and verifies banner; `flutter analyze && flutter test`.
   - Review estimate: ~220 changed lines, 30 min.
 
-- [ ] T14 — Add approval request backend/protocol
+- [x] T14 — Add approval request backend/protocol
   - Files:
     - `pi-hub-server.mjs`
     - `pi-hub.ts`
@@ -133,7 +133,7 @@ Each task uses:
   - Evidence: Server smoke creates approval event, responds approve/reject, command polls to agent; extension handles unknown API without crash.
   - Review estimate: ~380 changed lines, 70 min.
 
-- [ ] T15 — Add approval request mobile UI
+- [x] T15 — Add approval request mobile UI
   - Files:
     - `apps/pi_hub_app/lib/src/approval_sheet.dart`
     - `apps/pi_hub_app/lib/src/inbox_screen.dart`

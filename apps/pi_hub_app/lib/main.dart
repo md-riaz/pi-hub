@@ -186,6 +186,27 @@ class _HubHomePageState extends State<HubHomePage> {
     });
   }
 
+  Future<void> _respondToApproval(
+    HubApprovalRequest approval,
+    String response,
+    String comment,
+  ) async {
+    final result = await _client.respondToApproval(
+      approval.id,
+      response,
+      comment: comment,
+    );
+    if (!mounted || _snapshot == null) return;
+    setState(() {
+      if (result != null) {
+        _snapshot = _upsertApproval(_snapshot!, result);
+      }
+    });
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Queued approval $response')));
+  }
+
   HubSnapshot _upsertInboxItem(HubSnapshot snapshot, HubInboxItem item) {
     final inboxItems = [...snapshot.inboxItems];
     final index = inboxItems.indexWhere((current) => current.id == item.id);
@@ -234,6 +255,29 @@ class _HubHomePageState extends State<HubHomePage> {
     return next;
   }
 
+  HubSnapshot _upsertApproval(
+    HubSnapshot snapshot,
+    HubApprovalRequest approval,
+  ) {
+    final approvals = [...snapshot.approvals];
+    final index = approvals.indexWhere((current) => current.id == approval.id);
+    if (index >= 0) {
+      approvals[index] = approval;
+    } else {
+      approvals.add(approval);
+    }
+    return HubSnapshot(
+      server: snapshot.server,
+      sessions: snapshot.sessions,
+      inboxItems: snapshot.inboxItems,
+      commands: snapshot.commands,
+      approvals: approvals,
+      diffReviews: snapshot.diffReviews,
+      auditEvents: snapshot.auditEvents,
+      auditSummary: snapshot.auditSummary,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return MissionControlScreen(
@@ -253,6 +297,7 @@ class _HubHomePageState extends State<HubHomePage> {
       onShutdown: () => _runControl('shutdown'),
       onModel: _pickModel,
       onMarkInboxRead: _markInboxRead,
+      onApprovalResponse: _respondToApproval,
     );
   }
 }

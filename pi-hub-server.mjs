@@ -57,6 +57,7 @@ const commandQueues = new Map();
 const commands = new Map();
 const inboxItems = new Map();
 const inboxDedupe = new Map();
+const approvals = new Map();
 const watchers = new Set();
 const PENDING_COMMAND_STATUSES = new Set(["queued", "delivered"]);
 let eventSeq = 0;
@@ -138,7 +139,7 @@ function serverCapabilities() {
     health: true,
     inbox: true,
     commandLifecycle: true,
-    approvals: false,
+    approvals: true,
     diffReviews: false,
     agentCreation: false,
     pushDevices: false,
@@ -188,6 +189,7 @@ function snapshot() {
       .map(publicSession),
     commands: publicCommands(),
     inboxItems: publicInboxItems(),
+    approvals: publicApprovals(),
   };
 }
 
@@ -284,6 +286,35 @@ function publicCommands() {
     .map(publicCommand);
 }
 
+function publicApproval(approval) {
+  return {
+    id: approval.id,
+    sessionId: approval.sessionId || null,
+    title: approval.title,
+    body: approval.body,
+    risk: approval.risk,
+    choices: Array.isArray(approval.choices) ? approval.choices : ["approve", "reject"],
+    status: approval.status,
+    createdAt: approval.createdAt,
+    resolvedAt: approval.resolvedAt || null,
+    responseComment: approval.responseComment || null,
+  };
+}
+
+function publicApprovals() {
+  return Array.from(approvals.values())
+    .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))
+    .map(publicApproval);
+}
+
+function pendingApprovalCountForSession(sessionId) {
+  let count = 0;
+  for (const approval of approvals.values()) {
+    if (approval.sessionId === sessionId && approval.status === "pending") count++;
+  }
+  return count;
+}
+
 function pendingCommandCountForSession(sessionId) {
   let count = 0;
   for (const command of commands.values()) {
@@ -373,6 +404,53 @@ function sessionLabel(sessionId) {
   return session?.name || session?.cwd?.split(/[\\/]/).filter(Boolean).pop() || sessionId || "agent";
 }
 
+function createApprovalInboxItem(approval) {
+  if (!approval) return undefined;
+  return upsertInboxItem({
+    sessionId: approval.sessionId,
+    type: "approval",
+    severity: approval.risk === "high" ? "critical" : "warning",
+    title: approval.title || "Approval needed",
+    body: approval.body || `${sessionLabel(approval.sessionId)} requested approval.`,
+    actionRef: { kind: "approval", id: approval.id },
+    dedupeKey: `${approval.sessionId || "global"}:approval:${approval.id}`,
+  });
+}
+
+function normalizeApprovalRecord(event) {
+  const payload = event.payload || {};
+  const source = payload.approval && typeof payload.approval === "object" ? payload.approval : payload;
+  const now = Date.now();
+  const id = String(source.id || payload.approvalId || event.id || `approval_${crypto.randomUUID()}`);
+  const sessionId = typeof source.sessionId === "string" ? source.sessionId : event.sessionId;
+  const choices = Array.isArray(source.choices) && source.choices.length
+    ? source.choices.map(choice => String(choice)).filter(Boolean)
+    : ["approve", "reject"];
+  return {
+    id,
+    sessionId,
+    title: String(source.title || "Approval needed"),
+    body: String(source.body || source.summary || "Agent requested operator approval."),
+    risk: String(source.risk || "medium"),
+    choices: choices.length ? choices : ["approve", "reject"],
+    status: String(source.status || "pending"),
+    createdAt: Number(source.createdAt || event.timestamp || now),
+    resolvedAt: source.resolvedAt ? Number(source.resolvedAt) : null,
+    responseComment: typeof source.responseComment === "string" ? source.responseComment : null,
+  };
+}
+
+function upsertApprovalFromEvent(event) {
+  const next = normalizeApprovalRecord(event);
+  if (!next.sessionId) return undefined;
+  const existing = approvals.get(next.id);
+  const approval = existing ? { ...existing, ...next, createdAt: existing.createdAt || next.createdAt } : next;
+  approvals.set(approval.id, approval);
+  if (approval.status === "pending") createApprovalInboxItem(approval);
+  broadcast({ type: "approval.updated", sessionId: approval.sessionId, approval: publicApproval(approval) });
+  return approval;
+}
+
 function commandDisplayType(command) {
   return String(command?.type || "command").replace(/_/g, " ");
 }
@@ -445,7 +523,7 @@ function processInboxForEvent(event, session) {
     createToolErrorInbox(event.sessionId, payload.tool, payload.error || payload.tool.error);
   }
   if (type === "approval.requested" || type === "approval_requested") {
-    createActionInbox(event, "approval", { type: "approval", refKind: "approval", title: "Approval needed", body: sessionId => `${sessionLabel(sessionId)} requested approval.` });
+    upsertApprovalFromEvent(event);
   }
   if (type === "diff_review.requested" || type === "diff_review_requested") {
     createActionInbox(event, "diffReview", { type: "diff_review", refKind: "diff_review", title: "Diff review ready", body: (sessionId, review) => `${sessionLabel(sessionId)} has ${Array.isArray(review.files) ? review.files.length : ""} files ready for review.` });
@@ -543,6 +621,47 @@ function createCommand(sessionId, type, payload = {}) {
   trimCommands();
   broadcastCommandUpdate(command, "queued");
   return command;
+}
+
+function approvalResponseValue(body = {}) {
+  return String(body.response || body.choice || body.decision || body.action || "").trim().toLowerCase();
+}
+
+function respondToApproval(approvalId, body = {}) {
+  const approval = approvals.get(String(approvalId));
+  if (!approval) return undefined;
+  if (approval.status !== "pending") throw new Error("approval already resolved");
+  const response = approvalResponseValue(body);
+  if (response !== "approve" && response !== "reject") throw new Error("response must be approve or reject");
+  if (Array.isArray(approval.choices) && approval.choices.length && !approval.choices.includes(response)) {
+    throw new Error("response not allowed for approval");
+  }
+  const comment = typeof body.comment === "string" ? body.comment : typeof body.responseComment === "string" ? body.responseComment : "";
+  const now = Date.now();
+  approval.status = response === "approve" ? "approved" : "rejected";
+  approval.resolvedAt = now;
+  approval.responseComment = comment || null;
+  approvals.set(approval.id, approval);
+  const command = createCommand(approval.sessionId, "approval_response", {
+    approvalId: approval.id,
+    response,
+    approved: response === "approve",
+    comment,
+    title: approval.title,
+    risk: approval.risk,
+  });
+  upsertInboxItem({
+    sessionId: approval.sessionId,
+    type: "approval",
+    severity: response === "approve" ? "info" : "warning",
+    title: response === "approve" ? "Approval approved" : "Approval rejected",
+    body: comment || approval.body,
+    readAt: now,
+    actionRef: { kind: "approval", id: approval.id },
+    dedupeKey: `${approval.sessionId || "global"}:approval:${approval.id}`,
+  });
+  broadcast({ type: "approval.updated", sessionId: approval.sessionId, approval: publicApproval(approval), command: publicCommand(command) });
+  return { approval, command };
 }
 
 function commandIdFromPayload(payload = {}) {
@@ -817,7 +936,7 @@ function deriveSessionHealth(session) {
   const errorPayload = session.lastEvent?.payload || {};
   const hasAgentError = recentLastEvent && (session.lastEvent?.severity === "error" || (errorPayload.error && session.lastEvent?.type !== "command.queued"));
   const pendingActionType = recentLastEvent ? session.lastEvent?.type : undefined;
-  const hasPendingApproval = pendingActionType === "approval.requested" || pendingActionType === "approval_requested";
+  const hasPendingApproval = pendingApprovalCountForSession(session.id) > 0;
   const hasPendingDiff = pendingActionType === "diff_review.requested" || pendingActionType === "diff_review_requested";
 
   if (explicitOffline) attentionReasons.push("offline");
@@ -982,6 +1101,18 @@ const server = http.createServer(async (req, res) => {
       if (!ids.length) throw new Error("ids required");
       const updated = markInboxItemsRead(ids);
       sendJson(res, 200, { ok: true, inboxItems: updated.map(publicInboxItem) });
+      return;
+    }
+
+    const approvalRespondMatch = url.pathname.match(/^\/api\/v2\/approvals\/([^/]+)\/respond$/);
+    if (req.method === "POST" && approvalRespondMatch) {
+      const body = await readBody(req);
+      const result = respondToApproval(decodeURIComponent(approvalRespondMatch[1]), body);
+      if (!result) {
+        sendJson(res, 404, { error: "approval not found" });
+        return;
+      }
+      sendJson(res, 200, { ok: true, approval: publicApproval(result.approval), command: publicCommand(result.command), commandId: result.command.id });
       return;
     }
 

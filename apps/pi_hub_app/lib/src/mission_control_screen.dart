@@ -26,6 +26,7 @@ class MissionControlScreen extends StatelessWidget {
     required this.onShutdown,
     required this.onModel,
     required this.onMarkInboxRead,
+    required this.onApprovalResponse,
   });
 
   final HubSnapshot? snapshot;
@@ -44,6 +45,12 @@ class MissionControlScreen extends StatelessWidget {
   final VoidCallback onShutdown;
   final VoidCallback onModel;
   final Future<void> Function(HubInboxItem item) onMarkInboxRead;
+  final Future<void> Function(
+    HubApprovalRequest approval,
+    String response,
+    String comment,
+  )
+  onApprovalResponse;
 
   List<HubSession> get _sessions => snapshot?.sessions ?? const [];
 
@@ -134,6 +141,8 @@ class MissionControlScreen extends StatelessWidget {
                       onSelected(id);
                       DefaultTabController.of(tabContext).animateTo(2);
                     },
+                    approvals: snapshot?.approvals ?? const [],
+                    onApprovalResponse: onApprovalResponse,
                   ),
                   selected == null
                       ? const Center(child: Text('No Pi sessions connected'))
@@ -190,6 +199,8 @@ class MissionControlScreen extends StatelessWidget {
             sessions: _sessions,
             onMarkRead: onMarkInboxRead,
             onOpenSession: onSelected,
+            approvals: snapshot?.approvals ?? const [],
+            onApprovalResponse: onApprovalResponse,
           ),
         ),
       ],

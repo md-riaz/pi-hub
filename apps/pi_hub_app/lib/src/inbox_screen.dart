@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'approval_sheet.dart';
 import 'hub_models.dart';
 import 'session_detail_screen.dart' show timeLabel;
 
@@ -10,12 +11,21 @@ class InboxScreen extends StatefulWidget {
     required this.sessions,
     required this.onMarkRead,
     required this.onOpenSession,
+    required this.approvals,
+    required this.onApprovalResponse,
   });
 
   final List<HubInboxItem> items;
   final List<HubSession> sessions;
   final Future<void> Function(HubInboxItem item) onMarkRead;
   final ValueChanged<String> onOpenSession;
+  final List<HubApprovalRequest> approvals;
+  final Future<void> Function(
+    HubApprovalRequest approval,
+    String response,
+    String comment,
+  )
+  onApprovalResponse;
 
   @override
   State<InboxScreen> createState() => _InboxScreenState();
@@ -111,6 +121,9 @@ class _InboxScreenState extends State<InboxScreen> {
                       onOpenSession: _targetSessionId(item) == null
                           ? null
                           : () => widget.onOpenSession(_targetSessionId(item)!),
+                      onOpenApproval: _approvalFor(item) == null
+                          ? null
+                          : () => _openApproval(_approvalFor(item)!),
                     );
                   },
                 ),
@@ -137,6 +150,27 @@ class _InboxScreenState extends State<InboxScreen> {
     final ref = item.actionRef;
     if (ref?.kind == 'session' && ref!.id.isNotEmpty) return ref.id;
     return item.sessionId;
+  }
+
+  HubApprovalRequest? _approvalFor(HubInboxItem item) {
+    final ref = item.actionRef;
+    if (item.type != 'approval' || ref?.kind != 'approval') return null;
+    for (final approval in widget.approvals) {
+      if (approval.id == ref!.id) return approval;
+    }
+    return null;
+  }
+
+  Future<void> _openApproval(HubApprovalRequest approval) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => ApprovalSheet(
+        approval: approval,
+        onRespond: (response, comment) =>
+            widget.onApprovalResponse(approval, response, comment),
+      ),
+    );
   }
 }
 
@@ -259,6 +293,7 @@ class InboxItemCard extends StatelessWidget {
     required this.marking,
     required this.onMarkRead,
     required this.onOpenSession,
+    required this.onOpenApproval,
   });
 
   final HubInboxItem item;
@@ -266,6 +301,7 @@ class InboxItemCard extends StatelessWidget {
   final bool marking;
   final VoidCallback? onMarkRead;
   final VoidCallback? onOpenSession;
+  final VoidCallback? onOpenApproval;
 
   @override
   Widget build(BuildContext context) {
@@ -343,9 +379,11 @@ class InboxItemCard extends StatelessWidget {
                 const SizedBox(width: 8),
                 TextButton.icon(
                   key: ValueKey('inbox-open-${item.id}'),
-                  onPressed: onOpenSession,
-                  icon: const Icon(Icons.open_in_new),
-                  label: const Text('Open'),
+                  onPressed: onOpenApproval ?? onOpenSession,
+                  icon: Icon(
+                    onOpenApproval == null ? Icons.open_in_new : Icons.rule,
+                  ),
+                  label: Text(onOpenApproval == null ? 'Open' : 'Review'),
                 ),
               ],
             ),

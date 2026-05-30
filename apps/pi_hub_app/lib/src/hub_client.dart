@@ -69,35 +69,63 @@ class HubClient {
             _commandFromStreamData(data),
           );
         }
+        if (data['approval'] != null) {
+          snapshot = _upsertApprovalInSnapshot(
+            snapshot ?? HubSnapshot.empty(),
+            HubApprovalRequest.fromJson(_stringKeyMap(data['approval'] as Map)),
+          );
+        }
       }
       if (snapshot != null) yield snapshot;
     }
   }
 
   Future<List<HubInboxItem>> markInboxRead(String id) async {
+    final data = await _postJson('/api/v2/inbox/read', {
+      'ids': [id],
+    });
+    if (data['inboxItems'] is! List) return const [];
+    return [
+      for (final item in data['inboxItems'] as List)
+        if (item is Map) HubInboxItem.fromJson(_stringKeyMap(item)),
+    ];
+  }
+
+  Future<HubApprovalRequest?> respondToApproval(
+    String approvalId,
+    String response, {
+    String comment = '',
+  }) async {
+    final data = await _postJson(
+      '/api/v2/approvals/${Uri.encodeComponent(approvalId)}/respond',
+      {
+        'response': response,
+        if (comment.trim().isNotEmpty) 'comment': comment.trim(),
+      },
+    );
+    final approval = data['approval'];
+    return approval is Map
+        ? HubApprovalRequest.fromJson(_stringKeyMap(approval))
+        : null;
+  }
+
+  Future<Map<String, dynamic>> _postJson(
+    String path,
+    Map<String, Object?> payload,
+  ) async {
     final client = HttpClient();
     try {
-      final request = await client.postUrl(
-        Uri.parse('$baseUrl/api/v2/inbox/read'),
-      );
+      final request = await client.postUrl(Uri.parse('$baseUrl$path'));
       request.headers.contentType = ContentType.json;
       request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
-      request.write(
-        jsonEncode({
-          'ids': [id],
-        }),
-      );
+      request.write(jsonEncode(payload));
       final response = await request.close();
       final body = await response.transform(utf8.decoder).join();
       if (response.statusCode != 200) {
         throw Exception('${response.statusCode}: $body');
       }
       final data = jsonDecode(body);
-      if (data is! Map || data['inboxItems'] is! List) return const [];
-      return [
-        for (final item in data['inboxItems'] as List)
-          if (item is Map) HubInboxItem.fromJson(_stringKeyMap(item)),
-      ];
+      return data is Map ? _stringKeyMap(data) : <String, dynamic>{};
     } finally {
       client.close(force: true);
     }
@@ -208,6 +236,30 @@ HubSnapshot _upsertCommandInSnapshot(HubSnapshot snapshot, HubCommand command) {
     inboxItems: snapshot.inboxItems,
     commands: commands,
     approvals: snapshot.approvals,
+    diffReviews: snapshot.diffReviews,
+    auditEvents: snapshot.auditEvents,
+    auditSummary: snapshot.auditSummary,
+  );
+}
+
+HubSnapshot _upsertApprovalInSnapshot(
+  HubSnapshot snapshot,
+  HubApprovalRequest approval,
+) {
+  final approvals = [...snapshot.approvals];
+  final index = approvals.indexWhere((current) => current.id == approval.id);
+  if (index >= 0) {
+    approvals[index] = approval;
+  } else {
+    approvals.add(approval);
+  }
+  approvals.sort((a, b) => (b.createdAt ?? 0).compareTo(a.createdAt ?? 0));
+  return HubSnapshot(
+    server: snapshot.server,
+    sessions: snapshot.sessions,
+    inboxItems: snapshot.inboxItems,
+    commands: snapshot.commands,
+    approvals: approvals,
     diffReviews: snapshot.diffReviews,
     auditEvents: snapshot.auditEvents,
     auditSummary: snapshot.auditSummary,

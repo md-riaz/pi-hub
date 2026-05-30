@@ -382,6 +382,13 @@ export default function piHubExtension(pi: ExtensionAPI) {
 		return runningTool ? `tool:${runningTool}` : status;
 	}
 
+	function notifyFallback(message: string, level: "info" | "warning" | "error" = "info"): void {
+		const ctx = liveCtx();
+		try {
+			if (ctx?.hasUI) ctx.ui.notify(message, level);
+		} catch {}
+	}
+
 	async function sendEvent(event: Record<string, unknown>): Promise<void> {
 		if (!config.enabled || !sessionId || !serverOk) return;
 		try {
@@ -414,6 +421,39 @@ export default function piHubExtension(pi: ExtensionAPI) {
 			payload.error = errorMessage;
 		}
 		await sendEvent(payload);
+	}
+
+	async function handleApprovalResponse(command: any): Promise<void> {
+		const approvalId = command?.approvalId;
+		const response = String(command?.response || "");
+		const comment = typeof command?.comment === "string" ? command.comment : "";
+		const fallback = async (error?: unknown) => {
+			notifyFallback([
+				`Approval ${approvalId || "request"}: ${response || "response received"}`,
+				comment ? `Comment: ${comment}` : "",
+				error instanceof Error ? `Pi approval API unavailable: ${error.message}` : "",
+			].filter(Boolean).join("\n"), response === "reject" ? "warning" : "info");
+			await sendEvent({
+				type: "approval_response_fallback",
+				approvalId,
+				response,
+				comment,
+				appliedToPiApi: false,
+				error: error instanceof Error ? error.message : undefined,
+			});
+		};
+		const ctx = liveCtx();
+		const api = (ctx as any)?.approvals || (pi as any).approvals || (ctx as any)?.approvalManager || (pi as any).approvalManager;
+		const responder = api?.respond || api?.resolve || api?.submitResponse;
+		if (typeof responder !== "function") {
+			await fallback();
+			return;
+		}
+		try {
+			await Promise.resolve(responder.call(api, { approvalId, response, approved: response === "approve", comment }));
+		} catch (error) {
+			await fallback(error);
+		}
 	}
 
 	async function sendPresence(): Promise<void> {
@@ -491,6 +531,12 @@ export default function piHubExtension(pi: ExtensionAPI) {
 					if (command?.type === "shutdown") {
 						await sendCommandResult(command, true);
 						ctx.shutdown();
+						continue;
+					}
+
+					if (command?.type === "approval_response") {
+						await handleApprovalResponse(command);
+						await sendCommandResult(command, true);
 						continue;
 					}
 
