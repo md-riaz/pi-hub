@@ -110,7 +110,28 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
               ),
               if (widget.error != null) ...[
                 const SizedBox(height: 12),
-                Text(widget.error!, style: const TextStyle(color: HubTheme.red, fontSize: 12), textAlign: TextAlign.center),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: HubTheme.red.withOpacity(0.1),
+                    border: Border.all(color: HubTheme.red.withOpacity(0.3)),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.error_outline, size: 16, color: HubTheme.red),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          widget.error!,
+                          style: const TextStyle(color: HubTheme.red, fontSize: 12, height: 1.4),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
               const SizedBox(height: 32),
               // Recent connections

@@ -47,6 +47,7 @@ class _HubHomePageState extends State<HubHomePage> {
   StreamSubscription<HubSnapshot>? _subscription;
   String? _detailSessionId;
   String _connectionState = 'Disconnected';
+  String? _connectionError;
   bool _connecting = false;
 
   bool get _connected =>
@@ -95,21 +96,24 @@ class _HubHomePageState extends State<HubHomePage> {
     final message = error.toString();
     final lower = message.toLowerCase();
     if (lower.contains('401') || lower.contains('unauthorized')) {
-      return 'Unauthorized: token is wrong or stale. Copy token from /hub info.';
+      return 'Wrong token. Run /hub info on the host and copy the token.';
     }
     if (lower.contains('connection refused')) {
-      return 'Connection refused: hub server is not running or wrong IP/port.';
+      return 'Server not running or wrong address. Run /hub start then /hub info to get the correct URL.';
     }
     if (lower.contains('timed out') || lower.contains('timeout')) {
-      return 'Connection timed out: phone cannot reach hub. Use IP from /hub info.';
+      return 'Could not reach the server.\n\n• Check the URL matches /hub info output\n• Ensure port 17878 is open in Windows Firewall\n• Phone and host must be on the same network';
     }
     if (lower.contains('cleartext')) {
-      return 'HTTP blocked by Android cleartext policy. Install latest APK release.';
+      return 'Android blocks HTTP. Use the latest APK from GitHub Releases.';
     }
     if (lower.contains('socketexception') ||
         lower.contains('network is unreachable') ||
         lower.contains('failed host lookup')) {
-      return 'Network unreachable: phone and hub need a route.';
+      return 'Network unreachable.\n\n• Use the LAN IP from /hub info (not localhost)\n• Phone and host must share a network\n• Check firewall allows inbound TCP 17878';
+    }
+    if (lower.contains('connection reset') || lower.contains('broken pipe')) {
+      return 'Connection dropped. The server may have restarted. Tap Connect to retry.';
     }
     return 'Connection failed: $message';
   }
@@ -137,6 +141,7 @@ class _HubHomePageState extends State<HubHomePage> {
         _snapshot = snapshot;
         _connectionState = 'Connected';
         _connecting = false;
+        _connectionError = null;
       });
       _subscription = _client.streamSnapshots().listen(
         (snapshot) {
@@ -158,13 +163,15 @@ class _HubHomePageState extends State<HubHomePage> {
       );
     } catch (error) {
       if (!mounted) return;
+      final help = _connectionErrorHelp(error);
       setState(() {
         _connecting = false;
         _connectionState = 'Failed';
+        _connectionError = help;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(_connectionErrorHelp(error)),
+          content: Text(help),
           duration: const Duration(seconds: 8),
         ),
       );
@@ -179,11 +186,20 @@ class _HubHomePageState extends State<HubHomePage> {
       _detailSessionId = null;
       _connectionState = 'Disconnected';
     });
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Disconnected'), duration: Duration(seconds: 1)),
+      );
+    }
   }
 
   Future<void> _sendMessage(String sessionId, String text) async {
     try {
       await _client.sendMessage(sessionId, text);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sent'), duration: Duration(seconds: 1)),
+      );
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -194,16 +210,17 @@ class _HubHomePageState extends State<HubHomePage> {
 
   Future<void> _runControl(String action, {String? modelId}) async {
     if (_detailSessionId == null) return;
+    final label = action == 'set_model' ? 'Model switch' : action;
     try {
       await _client.sendControl(_detailSessionId!, action, modelId: modelId);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Queued $action')),
+        SnackBar(content: Text('$label queued'), duration: const Duration(seconds: 1)),
       );
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$action failed: $error')),
+        SnackBar(content: Text('$label failed: $error')),
       );
     }
   }
@@ -216,7 +233,7 @@ class _HubHomePageState extends State<HubHomePage> {
       tokenController: _tokenController,
       connecting: _connecting,
       connected: _connected,
-      connectionError: _connectionState.startsWith('Failed') ? _connectionState : null,
+      connectionError: _connectionError,
       connectionState: _connectionState,
       snapshot: _snapshot,
       detailSessionId: _detailSessionId,
