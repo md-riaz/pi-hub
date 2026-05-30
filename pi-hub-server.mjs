@@ -19,6 +19,8 @@ const DEFAULT_CONFIG = {
   token: "",
   historyLimit: 500,
   staleThresholdMs: 120_000,
+  commandTimeoutMs: 300_000,
+  commandHistoryLimit: 500,
 };
 
 function ensureConfig() {
@@ -34,7 +36,11 @@ function ensureConfig() {
   if (!config.host || typeof config.host !== "string") config.host = DEFAULT_CONFIG.host;
   if (!Number.isFinite(Number(config.historyLimit))) config.historyLimit = DEFAULT_CONFIG.historyLimit;
   if (!Number.isFinite(Number(config.staleThresholdMs))) config.staleThresholdMs = DEFAULT_CONFIG.staleThresholdMs;
+  if (!Number.isFinite(Number(config.commandTimeoutMs))) config.commandTimeoutMs = DEFAULT_CONFIG.commandTimeoutMs;
+  if (!Number.isFinite(Number(config.commandHistoryLimit))) config.commandHistoryLimit = DEFAULT_CONFIG.commandHistoryLimit;
   config.staleThresholdMs = Math.max(0, Number(config.staleThresholdMs));
+  config.commandTimeoutMs = Math.max(1000, Number(config.commandTimeoutMs));
+  config.commandHistoryLimit = Math.max(1, Number(config.commandHistoryLimit));
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
   return config;
 }
@@ -42,7 +48,9 @@ function ensureConfig() {
 const config = ensureConfig();
 const sessions = new Map();
 const commandQueues = new Map();
+const commands = new Map();
 const watchers = new Set();
+const PENDING_COMMAND_STATUSES = new Set(["queued", "delivered"]);
 let eventSeq = 0;
 let normalizedEventSeq = 0;
 
@@ -105,7 +113,7 @@ function serverCapabilities() {
     eventEnvelope: true,
     health: true,
     inbox: false,
-    commandLifecycle: false,
+    commandLifecycle: true,
     approvals: false,
     diffReviews: false,
     agentCreation: false,
@@ -114,6 +122,7 @@ function serverCapabilities() {
 }
 
 function snapshot() {
+  expireCommands();
   return {
     server: {
       pid: process.pid,
@@ -124,11 +133,13 @@ function snapshot() {
       version: "1.0.0",
       schemaVersion: 2,
       staleThresholdMs: Number(config.staleThresholdMs),
+      commandTimeoutMs: Number(config.commandTimeoutMs),
       capabilities: serverCapabilities(),
     },
     sessions: Array.from(sessions.values())
       .sort((a, b) => String(a.cwd).localeCompare(String(b.cwd)) || String(a.name || a.id).localeCompare(String(b.name || b.id)))
       .map(publicSession),
+    commands: publicCommands(),
   };
 }
 
@@ -194,6 +205,159 @@ function broadcast(payload) {
     try { res.write(text); }
     catch { watchers.delete(res); }
   }
+}
+
+function commandQueuePayload(command) {
+  return {
+    id: command.id,
+    type: command.type,
+    timestamp: command.createdAt,
+    ...command.payload,
+  };
+}
+
+function publicCommand(command) {
+  return {
+    id: command.id,
+    sessionId: command.sessionId,
+    type: command.type,
+    status: command.status,
+    createdAt: command.createdAt,
+    deliveredAt: command.deliveredAt || null,
+    finishedAt: command.finishedAt || null,
+    error: command.error || null,
+    payload: command.payload || {},
+  };
+}
+
+function publicCommands() {
+  return Array.from(commands.values())
+    .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))
+    .map(publicCommand);
+}
+
+function pendingCommandCountForSession(sessionId) {
+  let count = 0;
+  for (const command of commands.values()) {
+    if (command.sessionId === sessionId && PENDING_COMMAND_STATUSES.has(command.status)) count++;
+  }
+  return count;
+}
+
+function broadcastCommandUpdate(command, reason) {
+  const session = sessions.get(command.sessionId);
+  broadcast({
+    type: "command_updated",
+    reason,
+    sessionId: command.sessionId,
+    command: publicCommand(command),
+    session: session ? publicSession(session) : undefined,
+  });
+}
+
+function trimCommands() {
+  const limit = Number(config.commandHistoryLimit);
+  if (commands.size <= limit) return;
+  const oldest = Array.from(commands.values()).sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0));
+  for (const command of oldest) {
+    if (commands.size <= limit) break;
+    if (!PENDING_COMMAND_STATUSES.has(command.status)) commands.delete(command.id);
+  }
+  for (const command of oldest) {
+    if (commands.size <= limit) break;
+    commands.delete(command.id);
+  }
+}
+
+function markCommandStatus(commandOrId, status, options = {}) {
+  const command = typeof commandOrId === "string" ? commands.get(commandOrId) : commandOrId;
+  if (!command) return undefined;
+  const previous = command.status;
+  const final = !PENDING_COMMAND_STATUSES.has(previous);
+  if (final && previous !== status) return command;
+  const now = Date.now();
+  if (status === "delivered" && previous !== "queued") return command;
+  if ((status === "applied" || status === "failed") && previous !== "queued" && previous !== "delivered") return command;
+  command.status = status;
+  if (status === "delivered") command.deliveredAt = command.deliveredAt || now;
+  if (status === "applied" || status === "failed" || status === "expired") command.finishedAt = command.finishedAt || now;
+  if (typeof options.error === "string" && options.error) command.error = options.error;
+  commands.set(command.id, command);
+  if (previous !== command.status || options.error) broadcastCommandUpdate(command, options.reason || status);
+  trimCommands();
+  return command;
+}
+
+function expireCommands() {
+  const now = Date.now();
+  for (const command of commands.values()) {
+    if (PENDING_COMMAND_STATUSES.has(command.status) && now >= Number(command.expiresAt || 0)) {
+      markCommandStatus(command, "expired", { error: "command expired", reason: "expired" });
+    }
+  }
+}
+
+function createCommand(sessionId, type, payload = {}) {
+  expireCommands();
+  const createdAt = Date.now();
+  const command = {
+    id: `cmd_${crypto.randomUUID()}`,
+    sessionId,
+    type,
+    status: "queued",
+    createdAt,
+    deliveredAt: null,
+    finishedAt: null,
+    expiresAt: createdAt + Number(config.commandTimeoutMs),
+    error: null,
+    payload: { ...payload },
+  };
+  commands.set(command.id, command);
+  if (!commandQueues.has(sessionId)) commandQueues.set(sessionId, []);
+  commandQueues.get(sessionId).push(commandQueuePayload(command));
+  trimCommands();
+  broadcastCommandUpdate(command, "queued");
+  return command;
+}
+
+function commandIdFromPayload(payload = {}) {
+  return typeof payload.commandId === "string" && payload.commandId
+    ? payload.commandId
+    : typeof payload.command?.id === "string" && payload.command.id
+      ? payload.command.id
+      : undefined;
+}
+
+function applyCommandResult(event) {
+  const payload = event.payload || {};
+  const commandId = commandIdFromPayload(payload);
+  if (!commandId) return undefined;
+  const commandPayload = payload.command && typeof payload.command === "object" ? payload.command : {};
+  const applied = typeof payload.applied === "boolean" ? payload.applied : commandPayload.applied !== false;
+  const error = typeof payload.error === "string" ? payload.error : typeof commandPayload.error === "string" ? commandPayload.error : undefined;
+  let command = commands.get(commandId);
+  if (!command) {
+    const createdAt = Number(commandPayload.timestamp || event.timestamp || Date.now());
+    command = {
+      id: commandId,
+      sessionId: event.sessionId,
+      type: String(payload.commandType || commandPayload.type || "unknown"),
+      status: "delivered",
+      createdAt,
+      deliveredAt: createdAt,
+      finishedAt: null,
+      expiresAt: createdAt + Number(config.commandTimeoutMs),
+      error: null,
+      payload: { ...commandPayload },
+    };
+    delete command.payload.id;
+    delete command.payload.type;
+    delete command.payload.timestamp;
+    delete command.payload.applied;
+    delete command.payload.error;
+    commands.set(command.id, command);
+  }
+  return markCommandStatus(command, applied ? "applied" : "failed", { error, reason: applied ? "applied" : "failed" });
 }
 
 function mapLegacyEventType(type) {
@@ -403,6 +567,9 @@ function applyEvent(event) {
   } else {
     handleHubEvent(session, legacyEvent);
   }
+  if (event.type === "command.result" || event.legacyType === "command_received") {
+    applyCommandResult(event);
+  }
   session.lastEvent = event;
   return session;
 }
@@ -412,7 +579,7 @@ function deriveSessionHealth(session) {
   const age = lastSeen ? Math.max(0, Date.now() - lastSeen) : undefined;
   const tools = Array.from(session.tools?.values?.() || []);
   const runningToolCount = tools.filter(tool => tool?.status === "running").length;
-  const pendingCommandCount = (commandQueues.get(session.id) || []).length;
+  const pendingCommandCount = pendingCommandCountForSession(session.id);
   const attentionReasons = [];
   const explicitOffline = session.online === false || session.status === "offline";
   const isStale = !explicitOffline && age !== undefined && Number(config.staleThresholdMs) > 0 && age > Number(config.staleThresholdMs);
@@ -592,18 +759,11 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 404, { error: "session not found" });
         return;
       }
-      const command = {
-        id: `cmd_${crypto.randomUUID()}`,
-        type: "user_message",
-        text,
-        timestamp: Date.now(),
-      };
-      if (!commandQueues.has(sessionId)) commandQueues.set(sessionId, []);
-      commandQueues.get(sessionId).push(command);
+      const command = createCommand(sessionId, "user_message", { text });
       const session = getOrCreateSession(sessionId);
-      const event = normalizeEvent({ type: "command_queued", command: { id: command.id, type: command.type, timestamp: command.timestamp } }, sessionId, "command_queued");
+      const event = normalizeEvent({ type: "command_queued", command: { id: command.id, type: command.type, timestamp: command.createdAt } }, sessionId, "command_queued");
       session.lastEvent = event;
-      broadcast({ type: "command_queued", sessionId, command: { ...command, text: undefined } });
+      broadcast({ type: "command_queued", sessionId, command: { id: command.id, type: command.type, timestamp: command.createdAt } });
       sendJson(res, 200, { ok: true, commandId: command.id });
       return;
     }
@@ -619,18 +779,12 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 404, { error: "session not found" });
         return;
       }
-      const command = {
-        id: `cmd_${crypto.randomUUID()}`,
-        type: action,
-        modelId: typeof body.modelId === "string" ? body.modelId : undefined,
-        timestamp: Date.now(),
-      };
-      if (!commandQueues.has(sessionId)) commandQueues.set(sessionId, []);
-      commandQueues.get(sessionId).push(command);
+      const payload = typeof body.modelId === "string" ? { modelId: body.modelId } : {};
+      const command = createCommand(sessionId, action, payload);
       const session = getOrCreateSession(sessionId);
-      const event = normalizeEvent({ type: "command_queued", command: { id: command.id, type: command.type, timestamp: command.timestamp } }, sessionId, "command_queued");
+      const event = normalizeEvent({ type: "command_queued", command: { id: command.id, type: command.type, timestamp: command.createdAt } }, sessionId, "command_queued");
       session.lastEvent = event;
-      broadcast({ type: "command_queued", sessionId, command: { id: command.id, type: command.type, timestamp: command.timestamp } });
+      broadcast({ type: "command_queued", sessionId, command: { id: command.id, type: command.type, timestamp: command.createdAt } });
       sendJson(res, 200, { ok: true, commandId: command.id });
       return;
     }
@@ -638,9 +792,20 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/poll") {
       const sessionId = url.searchParams.get("sessionId") || "";
       if (!sessionId) throw new Error("sessionId required");
+      expireCommands();
       const queue = commandQueues.get(sessionId) || [];
+      const deliverable = [];
+      for (const command of queue) {
+        const status = commands.get(command.id);
+        if (status && status.status === "queued") {
+          markCommandStatus(status, "delivered", { reason: "delivered" });
+          deliverable.push(commandQueuePayload(status));
+        } else if (!status) {
+          deliverable.push(command);
+        }
+      }
       commandQueues.set(sessionId, []);
-      sendJson(res, 200, { ok: true, commands: queue });
+      sendJson(res, 200, { ok: true, commands: deliverable });
       return;
     }
 

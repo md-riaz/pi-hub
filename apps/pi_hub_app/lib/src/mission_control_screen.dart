@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'hub_models.dart';
 import 'session_detail_screen.dart';
+import 'widgets/agent_card.dart';
 import 'widgets/connection_bar.dart';
 
 class MissionControlScreen extends StatelessWidget {
@@ -41,6 +42,16 @@ class MissionControlScreen extends StatelessWidget {
   final VoidCallback onModel;
 
   List<HubSession> get _sessions => snapshot?.sessions ?? const [];
+
+  Map<String, int> get _unreadBySession {
+    final counts = <String, int>{};
+    for (final item in snapshot?.inboxItems ?? const <HubInboxItem>[]) {
+      final sessionId = item.sessionId;
+      if (sessionId == null || !item.unread) continue;
+      counts[sessionId] = (counts[sessionId] ?? 0) + 1;
+    }
+    return counts;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -98,6 +109,7 @@ class MissionControlScreen extends StatelessWidget {
                 SessionList(
                   sessions: _sessions,
                   selectedId: selectedSessionId,
+                  unreadBySession: _unreadBySession,
                   onSelected: onSelected,
                 ),
                 selected == null
@@ -128,6 +140,7 @@ class MissionControlScreen extends StatelessWidget {
           child: SessionList(
             sessions: _sessions,
             selectedId: selected?.id,
+            unreadBySession: _unreadBySession,
             onSelected: onSelected,
           ),
         ),
@@ -155,44 +168,69 @@ class SessionList extends StatelessWidget {
     super.key,
     required this.sessions,
     required this.selectedId,
+    required this.unreadBySession,
     required this.onSelected,
   });
 
   final List<HubSession> sessions;
   final String? selectedId;
+  final Map<String, int> unreadBySession;
   final ValueChanged<String> onSelected;
+
+  List<HubSession> get _sortedSessions {
+    final sorted = [...sessions];
+    sorted.sort(_compareSessionsByAttention);
+    return sorted;
+  }
 
   @override
   Widget build(BuildContext context) {
-    return ListView.separated(
-      itemCount: sessions.length,
-      separatorBuilder: (context, index) => const Divider(height: 1),
+    final sorted = _sortedSessions;
+    if (sorted.isEmpty) {
+      return const Center(child: Text('No Pi sessions connected'));
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.all(8),
+      itemCount: sorted.length,
       itemBuilder: (context, index) {
-        final session = sessions[index];
-        final selected = session.id == selectedId;
-        return ListTile(
-          selected: selected,
-          selectedTileColor: Theme.of(
-            context,
-          ).colorScheme.primaryContainer.withValues(alpha: 0.35),
-          title: Text(
-            session.displayName,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          subtitle: Text(
-            '${session.status} • ${session.cwd}',
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-          leading: Icon(
-            session.online ? Icons.circle : Icons.circle_outlined,
-            color: session.online ? Colors.greenAccent : Colors.grey,
-          ),
-          trailing: Text(session.shortId),
+        final session = sorted[index];
+        return AgentCard(
+          session: session,
+          unreadCount: unreadBySession[session.id] ?? 0,
+          selected: session.id == selectedId,
           onTap: () => onSelected(session.id),
         );
       },
     );
   }
+}
+
+int _compareSessionsByAttention(HubSession a, HubSession b) {
+  final attention = _attentionRank(b).compareTo(_attentionRank(a));
+  if (attention != 0) return attention;
+  final state = _stateRank(
+    b.health?.state,
+  ).compareTo(_stateRank(a.health?.state));
+  if (state != 0) return state;
+  return a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase());
+}
+
+int _attentionRank(HubSession session) {
+  final health = session.health;
+  final reasons = health?.attentionReasons.length ?? 0;
+  final attention = health?.needsAttention == true ? 100 : 0;
+  final pending = health?.pendingCommandCount ?? 0;
+  return attention + reasons * 10 + pending;
+}
+
+int _stateRank(String? state) {
+  return switch (state) {
+    'error' => 6,
+    'blocked' => 5,
+    'offline' => 4,
+    'stale' => 3,
+    'active' => 2,
+    'idle' => 1,
+    _ => 0,
+  };
 }
