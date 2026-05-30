@@ -175,6 +175,8 @@ class HubServerCapabilities {
     required this.collaboration,
     required this.pushDevices,
     required this.pushNotifications,
+    this.browse = false,
+    this.attachments = false,
   });
 
   final bool eventEnvelope;
@@ -187,6 +189,8 @@ class HubServerCapabilities {
   final bool collaboration;
   final bool pushDevices;
   final HubPushProviderStatus pushNotifications;
+  final bool browse;
+  final bool attachments;
 
   factory HubServerCapabilities.empty() => HubServerCapabilities(
     eventEnvelope: false,
@@ -199,6 +203,8 @@ class HubServerCapabilities {
     collaboration: false,
     pushDevices: false,
     pushNotifications: HubPushProviderStatus.empty(),
+    browse: false,
+    attachments: false,
   );
 
   factory HubServerCapabilities.fromJson(Map<String, dynamic> json) {
@@ -218,6 +224,8 @@ class HubServerCapabilities {
             HubPushProviderStatus.fromJson,
           ) ??
           HubPushProviderStatus.empty(),
+      browse: _asBool(json['browse']),
+      attachments: _asBool(json['attachments']),
     );
   }
 }

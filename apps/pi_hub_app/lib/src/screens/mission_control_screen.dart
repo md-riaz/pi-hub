@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../hub_client.dart';
 import '../hub_models.dart';
 import 'connection_screen.dart';
 import 'session_list_screen.dart';
@@ -27,6 +28,7 @@ class MissionControlScreen extends StatefulWidget {
   final VoidCallback? onNewSession;
   final VoidCallback? onBroadcast;
   final VoidCallback? onDisconnect;
+  final HubClient client;
 
   const MissionControlScreen({
     super.key,
@@ -52,6 +54,7 @@ class MissionControlScreen extends StatefulWidget {
     this.onNewSession,
     this.onBroadcast,
     this.onDisconnect,
+    required this.client,
   });
 
   @override
@@ -80,6 +83,7 @@ class _MissionControlScreenState extends State<MissionControlScreen> {
       );
       if (session != null) {
         return SessionDetailScreen(
+          client: widget.client,
           session: session,
           availableModels: session.availableModels,
           onSend: widget.onSend,

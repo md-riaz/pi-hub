@@ -6,6 +6,7 @@ import '../widgets/composer.dart';
 import '../widgets/status_dot.dart';
 import '../widgets/model_sheet.dart';
 import '../widgets/slash_sheet.dart';
+import '../hub_client.dart';
 import '../widgets/attachment_sheet.dart';
 import '../widgets/session_menu.dart';
 import '../widgets/diff_drawer.dart';
@@ -20,6 +21,7 @@ class SessionDetailScreen extends StatefulWidget {
   final ValueChanged<String>? onModelChanged;
   final VoidCallback? onPause;
   final VoidCallback? onStop;
+  final HubClient client;
 
   const SessionDetailScreen({
     super.key,
@@ -32,6 +34,7 @@ class SessionDetailScreen extends StatefulWidget {
     this.onModelChanged,
     this.onPause,
     this.onStop,
+    required this.client,
   });
 
   @override
@@ -189,7 +192,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
               _scrollToBottom();
             },
             model: _currentModel,
-            onAttachment: () => AttachmentSheet.show(context, onPick: (_) {}),
+            onAttachment: () => AttachmentSheet.show(context, client: widget.client, onPick: (attachments) { if (attachments.isNotEmpty) widget.onSend('[Attachment] ${attachments.first.name}'); }),
             onSlashCommands: () => SlashSheet.show(context, onCommand: (cmd) => widget.onSend(cmd)),
             onModelSwitch: modelNames.isNotEmpty
                 ? () => ModelSheet.show(context, models: modelNames, selected: _currentModel, onSelect: (m) {

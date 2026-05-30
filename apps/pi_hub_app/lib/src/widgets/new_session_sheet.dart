@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../hub_client.dart';
 import '../theme/hub_theme.dart';
 import 'remote_path_browser.dart';
 
@@ -11,15 +12,16 @@ class NewSessionResult {
 
 class NewSessionSheet extends StatefulWidget {
   final ValueChanged<NewSessionResult> onStart;
+  final HubClient? client;
 
-  const NewSessionSheet({super.key, required this.onStart});
+  const NewSessionSheet({super.key, required this.onStart, this.client});
 
-  static Future<void> show(BuildContext context, {required ValueChanged<NewSessionResult> onStart}) {
+  static Future<void> show(BuildContext context, {required ValueChanged<NewSessionResult> onStart, HubClient? client}) {
     return showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => NewSessionSheet(onStart: onStart),
+      builder: (_) => NewSessionSheet(onStart: onStart, client: client),
     );
   }
 
@@ -99,10 +101,14 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
               ),
               const SizedBox(width: 8),
               GestureDetector(
-                onTap: () async {
-                  final path = await RemotePathBrowser.show(context, initial: _pathController.text);
+                onTap: widget.client != null ? () async {
+                  final path = await RemotePathBrowser.show(
+                    context,
+                    client: widget.client!,
+                    initial: _pathController.text,
+                  );
                   if (path != null) setState(() => _pathController.text = path);
-                },
+                } : null,
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                   decoration: BoxDecoration(color: HubTheme.blue, borderRadius: BorderRadius.circular(16)),

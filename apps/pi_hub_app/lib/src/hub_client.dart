@@ -401,6 +401,84 @@ class HubClient {
   void close() {
     _streamClient?.close(force: true);
   }
+
+  /// Browse remote directory on the hub host.
+  Future<BrowseResult> browseDirectory(String dirPath) async {
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
+    try {
+      final uri = Uri.parse('$baseUrl/api/v2/browse?path=${Uri.encodeComponent(dirPath)}&token=$token');
+      final req = await client.getUrl(uri);
+      final res = await req.close().timeout(const Duration(seconds: 8));
+      final body = await res.transform(utf8.decoder).join();
+      if (res.statusCode != 200) throw Exception('${res.statusCode}: $body');
+      final json = jsonDecode(body) as Map<String, dynamic>;
+      return BrowseResult.fromJson(json);
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  /// Send text + optional file attachments to a session.
+  Future<void> sendAttachment(String sessionId, {required String text, required List<AttachmentData> attachments}) async {
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
+    try {
+      final uri = Uri.parse('$baseUrl/api/v2/send-attachment?token=$token');
+      final req = await client.postUrl(uri);
+      req.headers.contentType = ContentType.json;
+      req.write(jsonEncode({
+        'sessionId': sessionId,
+        'text': text,
+        'attachments': attachments.map((a) => a.toJson()).toList(),
+      }));
+      final res = await req.close().timeout(const Duration(seconds: 30));
+      final body = await res.transform(utf8.decoder).join();
+      if (res.statusCode != 200) throw Exception('${res.statusCode}: $body');
+    } finally {
+      client.close(force: true);
+    }
+  }
+}
+
+class BrowseResult {
+  final String path;
+  final String parent;
+  final List<BrowseEntry> items;
+
+  BrowseResult({required this.path, required this.parent, required this.items});
+
+  factory BrowseResult.fromJson(Map<String, dynamic> json) {
+    return BrowseResult(
+      path: json['path'] ?? '/',
+      parent: json['parent'] ?? '/',
+      items: (json['items'] as List? ?? []).map((e) => BrowseEntry.fromJson(e)).toList(),
+    );
+  }
+}
+
+class BrowseEntry {
+  final String name;
+  final String path;
+  final bool isDirectory;
+
+  BrowseEntry({required this.name, required this.path, required this.isDirectory});
+
+  factory BrowseEntry.fromJson(Map<String, dynamic> json) {
+    return BrowseEntry(
+      name: json['name'] ?? '',
+      path: json['path'] ?? '',
+      isDirectory: json['isDirectory'] ?? false,
+    );
+  }
+}
+
+class AttachmentData {
+  final String name;
+  final String mimeType;
+  final String data; // base64 encoded
+
+  AttachmentData({required this.name, required this.mimeType, required this.data});
+
+  Map<String, dynamic> toJson() => {'name': name, 'mimeType': mimeType, 'data': data};
 }
 
 HubSnapshot _upsertInboxItemInSnapshot(

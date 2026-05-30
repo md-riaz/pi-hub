@@ -260,6 +260,8 @@ function serverCapabilities() {
     collaboration: true,
     pushDevices: true,
     pushNotifications: pushProviderStatus(),
+    browse: true,
+    attachments: true,
   };
 }
 
@@ -2027,6 +2029,69 @@ const server = http.createServer(async (req, res) => {
       }
       commandQueues.set(sessionId, []);
       sendJson(res, 200, { ok: true, commands: deliverable });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/v2/browse") {
+      const rawPath = url.searchParams.get("path") || "";
+      const dirPath = path.resolve(rawPath || os.homedir());
+      try {
+        const stat = fs.statSync(dirPath);
+        if (!stat.isDirectory()) throw new Error("not a directory");
+      } catch {
+        sendJson(res, 400, { error: "invalid directory path" });
+        return;
+      }
+      const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+      const items = entries
+        .filter(e => !e.name.startsWith("."))
+        .map(e => ({
+          name: e.name,
+          path: path.join(dirPath, e.name),
+          isDirectory: e.isDirectory(),
+        }))
+        .sort((a, b) => {
+          if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+          return a.name.localeCompare(b.name);
+        });
+      sendJson(res, 200, { ok: true, path: dirPath, parent: path.dirname(dirPath), items });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/v2/send-attachment") {
+      const body = await readBody(req);
+      const sessionId = requireSessionId(body);
+      const text = String(body.text || "").trim();
+      const attachments = Array.isArray(body.attachments) ? body.attachments : [];
+      if (!text && attachments.length === 0) throw new Error("text or attachments required");
+      if (!sessions.has(sessionId)) {
+        sendJson(res, 404, { error: "session not found" });
+        return;
+      }
+      const content = [];
+      if (text) content.push({ type: "text", text });
+      for (const att of attachments) {
+        const name = String(att.name || "file");
+        const mimeType = String(att.mimeType || "application/octet-stream");
+        const data = String(att.data || "");
+        if (!data) continue;
+        const sizeBytes = Math.ceil(data.length * 3 / 4);
+        if (sizeBytes > 5 * 1024 * 1024) {
+          sendJson(res, 400, { error: `Attachment ${name} exceeds 5MB limit` });
+          return;
+        }
+        if (mimeType.startsWith("image/")) {
+          content.push({ type: "image", mimeType, data, name });
+        } else {
+          content.push({ type: "text", text: `[File: ${name}]\n${Buffer.from(data, "base64").toString("utf-8")}` });
+        }
+      }
+      const command = createCommand(sessionId, "user_message", { text: text || `[${attachments.length} attachment(s)]`, attachments: content });
+      const session = getOrCreateSession(sessionId);
+      const event = normalizeEvent({ type: "command_queued", command: { id: command.id, type: command.type, timestamp: command.createdAt } }, sessionId, "command_queued");
+      session.lastEvent = event;
+      broadcast({ type: "command_queued", sessionId, command: { id: command.id, type: command.type, timestamp: command.createdAt } });
+      sendJson(res, 200, { ok: true, commandId: command.id });
       return;
     }
 

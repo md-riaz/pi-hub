@@ -211,6 +211,7 @@ class _HubHomePageState extends State<HubHomePage> {
   @override
   Widget build(BuildContext context) {
     return MissionControlScreen(
+      client: _client,
       serverController: _serverController,
       tokenController: _tokenController,
       connecting: _connecting,
