@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'agent_create_sheet.dart';
+import 'collaboration_screen.dart';
 import 'diff_review_screen.dart';
 import 'hub_client.dart';
 import 'hub_models.dart';
@@ -74,6 +75,8 @@ class MissionControlScreen extends StatelessWidget {
       snapshot?.server?.capabilities.agentCreation == true;
   bool get _canRegisterPushDevice =>
       snapshot?.server?.capabilities.pushDevices == true;
+  bool get _canCollaborate =>
+      snapshot?.server?.capabilities.collaboration == true;
 
   Map<String, int> get _unreadBySession {
     final counts = <String, int>{};
@@ -163,17 +166,20 @@ class MissionControlScreen extends StatelessWidget {
   Widget _buildNarrow(BuildContext context) {
     final selected = selectedSession;
     return DefaultTabController(
-      length: 3,
+      length: _canCollaborate ? 4 : 3,
       child: Builder(
         builder: (tabContext) => Column(
           children: [
             Material(
               color: Theme.of(context).colorScheme.surface,
-              child: const TabBar(
+              child: TabBar(
+                isScrollable: _canCollaborate,
                 tabs: [
-                  Tab(icon: Icon(Icons.dashboard), text: 'Agents'),
-                  Tab(icon: Icon(Icons.inbox), text: 'Inbox'),
-                  Tab(icon: Icon(Icons.terminal), text: 'Detail'),
+                  const Tab(icon: Icon(Icons.dashboard), text: 'Agents'),
+                  const Tab(icon: Icon(Icons.inbox), text: 'Inbox'),
+                  const Tab(icon: Icon(Icons.terminal), text: 'Detail'),
+                  if (_canCollaborate)
+                    const Tab(icon: Icon(Icons.forum), text: 'Collab'),
                 ],
               ),
             ),
@@ -212,6 +218,13 @@ class MissionControlScreen extends StatelessWidget {
                           onShutdown: onShutdown,
                           onModel: onModel,
                         ),
+                  if (_canCollaborate)
+                    CollaborationScreen(
+                      sessions: _sessions,
+                      inboxItems: snapshot?.inboxItems ?? const [],
+                      baseUrl: serverController.text,
+                      token: tokenController.text,
+                    ),
                 ],
               ),
             ),
@@ -275,15 +288,42 @@ class MissionControlScreen extends StatelessWidget {
         ),
         const VerticalDivider(width: 1),
         SizedBox(
-          width: width >= 1180 ? 360 : 320,
-          child: InboxScreen(
-            items: snapshot?.inboxItems ?? const [],
-            sessions: _sessions,
-            onMarkRead: onMarkInboxRead,
-            onOpenSession: onSelected,
-            approvals: snapshot?.approvals ?? const [],
-            onApprovalResponse: onApprovalResponse,
-            onOpenDiffReview: (id) => _openDiffReview(context, id),
+          width: width >= 1180 ? 380 : 320,
+          child: DefaultTabController(
+            length: _canCollaborate ? 2 : 1,
+            child: Column(
+              children: [
+                if (_canCollaborate)
+                  const TabBar(
+                    tabs: [
+                      Tab(icon: Icon(Icons.inbox), text: 'Inbox'),
+                      Tab(icon: Icon(Icons.forum), text: 'Collab'),
+                    ],
+                  ),
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      InboxScreen(
+                        items: snapshot?.inboxItems ?? const [],
+                        sessions: _sessions,
+                        onMarkRead: onMarkInboxRead,
+                        onOpenSession: onSelected,
+                        approvals: snapshot?.approvals ?? const [],
+                        onApprovalResponse: onApprovalResponse,
+                        onOpenDiffReview: (id) => _openDiffReview(context, id),
+                      ),
+                      if (_canCollaborate)
+                        CollaborationScreen(
+                          sessions: _sessions,
+                          inboxItems: snapshot?.inboxItems ?? const [],
+                          baseUrl: serverController.text,
+                          token: tokenController.text,
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ],

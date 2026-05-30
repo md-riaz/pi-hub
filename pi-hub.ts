@@ -456,6 +456,39 @@ export default function piHubExtension(pi: ExtensionAPI) {
 		}
 	}
 
+	async function handleCollaborationMessage(command: any): Promise<void> {
+		const text = typeof command?.text === "string" ? command.text.trim() : "";
+		if (!text) throw new Error("collaboration message text required");
+		const collaborationId = String(command?.collaborationId || command?.id || "unknown");
+		const title = typeof command?.title === "string" && command.title.trim() ? command.title.trim() : "Collaboration message";
+		const origin = command?.origin && typeof command.origin === "object" ? command.origin : { kind: "operator", id: "mobile" };
+		const ctx = liveCtx();
+		const api = (ctx as any)?.collaboration || (pi as any).collaboration || (ctx as any)?.messageRouter || (pi as any).messageRouter;
+		const injector = api?.injectMessage || api?.sendMessage || api?.notify;
+		let appliedToPiApi = false;
+		let fallbackError: string | undefined;
+		if (typeof injector === "function") {
+			try {
+				await Promise.resolve(injector.call(api, { collaborationId, title, text, origin }));
+				appliedToPiApi = true;
+			} catch (error) {
+				fallbackError = error instanceof Error ? error.message : String(error);
+			}
+		}
+		if (!appliedToPiApi) {
+			notifyFallback([title, text, fallbackError ? `Pi collaboration API unavailable: ${fallbackError}` : ""].filter(Boolean).join("\n"), "info");
+		}
+		await sendEvent({
+			type: "collaboration_message",
+			collaborationId,
+			title,
+			text,
+			origin,
+			appliedToPiApi,
+			error: fallbackError,
+		});
+	}
+
 	async function sendPresence(): Promise<void> {
 		const ctx = liveCtx();
 		if (!ctx || !serverOk) return;
@@ -548,6 +581,12 @@ export default function piHubExtension(pi: ExtensionAPI) {
 							ctx.ui.notify(`Diff review ${diffReviewId}: ${action}${comment}`, action === "changes_requested" || action === "request_changes" ? "warning" : "info");
 						}
 						await sendEvent({ type: "diff_review_response", diffReviewId, action, status: command.status, comment: command.comment });
+						await sendCommandResult(command, true);
+						continue;
+					}
+
+					if (command?.type === "collaboration_message") {
+						await handleCollaborationMessage(command);
 						await sendCommandResult(command, true);
 						continue;
 					}

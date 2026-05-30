@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pi_hub_app/main.dart';
 import 'package:pi_hub_app/src/agent_create_sheet.dart';
 import 'package:pi_hub_app/src/approval_sheet.dart';
+import 'package:pi_hub_app/src/collaboration_screen.dart';
 import 'package:pi_hub_app/src/hub_client.dart';
 import 'package:pi_hub_app/src/diff_review_screen.dart';
 import 'package:pi_hub_app/src/hub_models.dart';
@@ -748,6 +749,154 @@ void main() {
     expect(result.status, 'succeeded');
     expect(result.id, 'agent-create-one');
     expect(result.pid, 1234);
+  });
+
+  test(
+    'HubClient sendCollaborationMessage calls v2 collaboration API',
+    () async {
+      final previousOverrides = HttpOverrides.current;
+      HttpOverrides.global = null;
+      addTearDown(() => HttpOverrides.global = previousOverrides);
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      final requestSeen = Completer<Map<String, Object?>>();
+      server.listen((request) async {
+        final body = await utf8.decoder.bind(request).join();
+        requestSeen.complete({
+          'method': request.method,
+          'path': request.uri.path,
+          'authorization': request.headers.value(
+            HttpHeaders.authorizationHeader,
+          ),
+          'body': body,
+        });
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(
+          jsonEncode({
+            'ok': true,
+            'collaborationMessage': {
+              'id': 'collab-one',
+              'targetSessionIds': ['session-a', 'session-b'],
+            },
+            'commands': [
+              {'id': 'cmd-a'},
+              {'id': 'cmd-b'},
+            ],
+          }),
+        );
+        await request.response.close();
+      });
+
+      final client = HubClient()
+        ..configure(
+          baseUrl: 'http://${server.address.host}:${server.port}/',
+          token: 'secret',
+        );
+      addTearDown(client.close);
+
+      final result = await client.sendCollaborationMessage(
+        sessionIds: ['session-a', 'session-b'],
+        text: 'Coordinate handoff',
+      );
+      final request = await requestSeen.future;
+
+      expect(request['method'], 'POST');
+      expect(request['path'], '/api/v2/collaboration/messages');
+      expect(request['authorization'], 'Bearer secret');
+      expect(jsonDecode(request['body']! as String), {
+        'sessionIds': ['session-a', 'session-b'],
+        'text': 'Coordinate handoff',
+      });
+      expect(result.id, 'collab-one');
+      expect(result.targetCount, 2);
+      expect(result.commandIds, ['cmd-a', 'cmd-b']);
+    },
+  );
+
+  testWidgets('Collaboration screen selects two agents and submits message', (
+    WidgetTester tester,
+  ) async {
+    final snapshot = HubSnapshot.fromJson({
+      'sessions': [
+        {
+          'id': 'session-a',
+          'name': 'Agent A',
+          'cwd': '/workspace/a',
+          'model': 'gpt-5-codex',
+          'pid': 101,
+          'status': 'idle',
+          'online': true,
+        },
+        {
+          'id': 'session-b',
+          'name': 'Agent B',
+          'cwd': '/workspace/b',
+          'model': 'gpt-5-codex',
+          'pid': 102,
+          'status': 'thinking',
+          'online': true,
+        },
+      ],
+      'inboxItems': [
+        {
+          'id': 'inbox-collab',
+          'sessionId': 'session-a',
+          'type': 'collaboration',
+          'severity': 'info',
+          'title': 'Prior handoff',
+          'body': 'Use branch feature-x',
+          'createdAt': 1770000000000,
+          'actionRef': {'kind': 'collaboration', 'id': 'collab-old'},
+        },
+      ],
+    });
+    List<String>? submittedIds;
+    String? submittedText;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(useMaterial3: true),
+        home: Scaffold(
+          body: CollaborationScreen(
+            sessions: snapshot.sessions,
+            inboxItems: snapshot.inboxItems,
+            onSend: (sessionIds, text) async {
+              submittedIds = sessionIds;
+              submittedText = text;
+              return CollaborationSendResult(
+                id: 'collab-new',
+                targetCount: sessionIds.length,
+                commandIds: const ['cmd-a', 'cmd-b'],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('collaboration-screen')), findsOneWidget);
+    expect(find.text('Prior handoff'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('collaboration-message-field')),
+      'Coordinate handoff',
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('collaboration-target-session-a')),
+    );
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey('collaboration-target-session-b')),
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('collaboration-submit')));
+    await tester.pump();
+
+    expect(submittedIds, ['session-a', 'session-b']);
+    expect(submittedText, 'Coordinate handoff');
+    expect(find.byKey(const ValueKey('collaboration-status')), findsOneWidget);
+    expect(find.text('Sent to 2 agents'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('Agent create action hides when disabled', (

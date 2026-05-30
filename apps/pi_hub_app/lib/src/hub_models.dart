@@ -158,6 +158,7 @@ class HubServerCapabilities {
     required this.approvals,
     required this.diffReviews,
     required this.agentCreation,
+    required this.collaboration,
     required this.pushDevices,
     required this.pushNotifications,
   });
@@ -169,6 +170,7 @@ class HubServerCapabilities {
   final bool approvals;
   final bool diffReviews;
   final bool agentCreation;
+  final bool collaboration;
   final bool pushDevices;
   final HubPushProviderStatus pushNotifications;
 
@@ -180,6 +182,7 @@ class HubServerCapabilities {
     approvals: false,
     diffReviews: false,
     agentCreation: false,
+    collaboration: false,
     pushDevices: false,
     pushNotifications: HubPushProviderStatus.empty(),
   );
@@ -193,6 +196,7 @@ class HubServerCapabilities {
       approvals: _asBool(json['approvals']),
       diffReviews: _asBool(json['diffReviews']),
       agentCreation: _asBool(json['agentCreation']),
+      collaboration: _asBool(json['collaboration']),
       pushDevices: _asBool(json['pushDevices']),
       pushNotifications:
           _optionalMap(
