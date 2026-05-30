@@ -4,6 +4,7 @@ import os from "node:os";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -27,7 +28,36 @@ const DEFAULT_CONFIG = {
   diffReviewMaxFiles: 20,
   diffReviewPatchMaxChars: 12_000,
   diffReviewTotalPatchMaxChars: 60_000,
+  auditLimit: 500,
+  agentCreation: {
+    enabled: false,
+    piCommand: "pi",
+    workspaceRoots: [],
+    defaultArgs: [],
+    testMode: false,
+  },
 };
+
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function normalizeAgentCreationConfig(value = {}) {
+  const source = isPlainObject(value) ? value : {};
+  return {
+    enabled: source.enabled === true,
+    piCommand: typeof source.piCommand === "string" && source.piCommand.trim()
+      ? source.piCommand.trim()
+      : DEFAULT_CONFIG.agentCreation.piCommand,
+    workspaceRoots: Array.isArray(source.workspaceRoots)
+      ? source.workspaceRoots.filter(root => typeof root === "string" && root.trim()).map(root => path.resolve(root))
+      : [],
+    defaultArgs: Array.isArray(source.defaultArgs)
+      ? source.defaultArgs.filter(arg => typeof arg === "string")
+      : [],
+    testMode: source.testMode === true,
+  };
+}
 
 function ensureConfig() {
   fs.mkdirSync(HUB_DIR, { recursive: true });
@@ -50,6 +80,8 @@ function ensureConfig() {
   if (!Number.isFinite(Number(config.diffReviewMaxFiles))) config.diffReviewMaxFiles = DEFAULT_CONFIG.diffReviewMaxFiles;
   if (!Number.isFinite(Number(config.diffReviewPatchMaxChars))) config.diffReviewPatchMaxChars = DEFAULT_CONFIG.diffReviewPatchMaxChars;
   if (!Number.isFinite(Number(config.diffReviewTotalPatchMaxChars))) config.diffReviewTotalPatchMaxChars = DEFAULT_CONFIG.diffReviewTotalPatchMaxChars;
+  if (!Number.isFinite(Number(config.auditLimit))) config.auditLimit = DEFAULT_CONFIG.auditLimit;
+  config.agentCreation = normalizeAgentCreationConfig(config.agentCreation);
   config.staleThresholdMs = Math.max(0, Number(config.staleThresholdMs));
   config.commandTimeoutMs = Math.max(1000, Number(config.commandTimeoutMs));
   config.commandHistoryLimit = Math.max(1, Number(config.commandHistoryLimit));
@@ -59,6 +91,7 @@ function ensureConfig() {
   config.diffReviewMaxFiles = Math.max(1, Number(config.diffReviewMaxFiles));
   config.diffReviewPatchMaxChars = Math.max(256, Number(config.diffReviewPatchMaxChars));
   config.diffReviewTotalPatchMaxChars = Math.max(256, Number(config.diffReviewTotalPatchMaxChars));
+  config.auditLimit = Math.max(1, Number(config.auditLimit));
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
   return config;
 }
@@ -71,6 +104,7 @@ const inboxItems = new Map();
 const inboxDedupe = new Map();
 const approvals = new Map();
 const diffReviews = new Map();
+const auditEvents = [];
 const watchers = new Set();
 const PENDING_COMMAND_STATUSES = new Set(["queued", "delivered"]);
 let eventSeq = 0;
@@ -154,7 +188,7 @@ function serverCapabilities() {
     commandLifecycle: true,
     approvals: true,
     diffReviews: true,
-    agentCreation: false,
+    agentCreation: config.agentCreation.enabled,
     pushDevices: false,
   };
 }
@@ -178,6 +212,48 @@ function publicInboxItems() {
   return Array.from(inboxItems.values())
     .sort((a, b) => Number(b.updatedAt || b.createdAt || 0) - Number(a.updatedAt || a.createdAt || 0))
     .map(publicInboxItem);
+}
+
+function publicAuditEvent(event) {
+  return {
+    id: event.id,
+    type: event.type,
+    timestamp: event.timestamp,
+    actor: event.actor,
+    summary: event.summary,
+    details: event.details || {},
+  };
+}
+
+function publicAuditEvents() {
+  return auditEvents
+    .slice()
+    .sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0))
+    .map(publicAuditEvent);
+}
+
+function auditSummary() {
+  const last = auditEvents.reduce((max, event) => Math.max(max, Number(event.timestamp || 0)), 0);
+  return {
+    totalCount: auditEvents.length,
+    recentCount: auditEvents.length,
+    lastEventAt: last || null,
+  };
+}
+
+function recordAudit(type, summary, details = {}, actor = { kind: "server", id: "pi-hub" }) {
+  const event = {
+    id: `audit_${crypto.randomUUID()}`,
+    type,
+    timestamp: Date.now(),
+    actor,
+    summary,
+    details,
+  };
+  auditEvents.push(event);
+  while (auditEvents.length > Number(config.auditLimit)) auditEvents.shift();
+  broadcast({ type: "audit.created", auditEvent: publicAuditEvent(event) });
+  return event;
 }
 
 function snapshot() {
@@ -208,6 +284,8 @@ function snapshot() {
     inboxItems: publicInboxItems(),
     approvals: publicApprovals(),
     diffReviews: publicDiffReviews(),
+    auditEvents: publicAuditEvents(),
+    auditSummary: auditSummary(),
   };
 }
 
@@ -1160,6 +1238,165 @@ function deriveSessionHealth(session) {
   };
 }
 
+function creationText(value, field, max) {
+  if (value === undefined || value === null) return "";
+  const text = String(value).trim();
+  if (text.length > max) throw new Error(`${field} too long`);
+  return text;
+}
+
+function resolveWorkspace(cwd) {
+  const raw = creationText(cwd, "cwd", 2000);
+  if (!raw) throw new Error("cwd required");
+  const resolved = path.resolve(raw);
+  let stats;
+  try { stats = fs.statSync(resolved); }
+  catch { throw new Error("cwd must be an existing directory"); }
+  if (!stats.isDirectory()) throw new Error("cwd must be an existing directory");
+  return fs.realpathSync(resolved);
+}
+
+function pathInside(root, child) {
+  const relative = path.relative(root, child);
+  return !relative || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function allowedWorkspaceRoot(cwd) {
+  for (const root of config.agentCreation.workspaceRoots) {
+    try {
+      const stats = fs.statSync(root);
+      if (!stats.isDirectory()) continue;
+      const realRoot = fs.realpathSync(root);
+      if (pathInside(realRoot, cwd)) return realRoot;
+    } catch {}
+  }
+  return undefined;
+}
+
+function validateAgentCreationRequest(body = {}) {
+  const cwd = resolveWorkspace(body.cwd ?? body.workspace);
+  if (!config.agentCreation.workspaceRoots.length) throw new Error("workspace root allowlist is empty");
+  const workspaceRoot = allowedWorkspaceRoot(cwd);
+  if (!workspaceRoot) throw new Error("cwd outside configured workspace roots");
+  return {
+    cwd,
+    workspaceRoot,
+    name: creationText(body.name, "name", 120),
+    model: creationText(body.model, "model", 160),
+    initialPrompt: creationText(body.initialPrompt ?? body.prompt, "initialPrompt", 8000),
+  };
+}
+
+function publicAgentCreationStatus(creation) {
+  return {
+    id: creation.id,
+    status: creation.status,
+    cwd: creation.cwd,
+    name: creation.name || null,
+    model: creation.model || null,
+    pid: creation.pid || null,
+    createdAt: creation.createdAt,
+    finishedAt: creation.finishedAt || null,
+    exitCode: creation.exitCode ?? null,
+    error: creation.error || null,
+    testMode: creation.testMode,
+  };
+}
+
+function broadcastAgentCreation(creation) {
+  broadcast({ type: "agent.creation.updated", creation: publicAgentCreationStatus(creation) });
+}
+
+function agentCreationDetails(request, extra = {}) {
+  return {
+    cwd: request.cwd,
+    workspaceRoot: request.workspaceRoot,
+    name: request.name || null,
+    model: request.model || null,
+    hasInitialPrompt: Boolean(request.initialPrompt),
+    ...extra,
+  };
+}
+
+function startAgentCreation(request) {
+  const createdAt = Date.now();
+  const creation = {
+    id: `agent_create_${crypto.randomUUID()}`,
+    status: "spawning",
+    cwd: request.cwd,
+    name: request.name,
+    model: request.model,
+    pid: null,
+    createdAt,
+    finishedAt: null,
+    exitCode: null,
+    error: null,
+    testMode: config.agentCreation.testMode,
+  };
+  const env = {
+    ...process.env,
+    PI_HUB_AGENT_CWD: request.cwd,
+    PI_HUB_AGENT_NAME: request.name,
+    PI_HUB_AGENT_MODEL: request.model,
+    PI_HUB_INITIAL_PROMPT: request.initialPrompt,
+  };
+  const args = [...config.agentCreation.defaultArgs];
+  const child = spawn(config.agentCreation.piCommand, args, {
+    cwd: request.cwd,
+    env,
+    shell: false,
+    windowsHide: true,
+    detached: !config.agentCreation.testMode,
+    stdio: config.agentCreation.testMode ? ["ignore", "pipe", "pipe"] : "ignore",
+  });
+  creation.pid = child.pid || null;
+  creation.status = config.agentCreation.testMode ? "running" : "spawned";
+  recordAudit("agent.create.spawned", `Agent creation spawned in ${request.cwd}`, agentCreationDetails(request, { creationId: creation.id, pid: creation.pid, testMode: creation.testMode }));
+  broadcastAgentCreation(creation);
+
+  if (!config.agentCreation.testMode) {
+    child.once("error", error => {
+      creation.status = "failed";
+      creation.error = error.message;
+      creation.finishedAt = Date.now();
+      recordAudit("agent.create.failed", `Agent creation failed in ${request.cwd}: ${error.message}`, agentCreationDetails(request, { creationId: creation.id, error: error.message }));
+      broadcastAgentCreation(creation);
+    });
+    child.unref();
+    return { creation: publicAgentCreationStatus(creation), complete: false };
+  }
+
+  const waitForExit = new Promise(resolve => {
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    const finish = (status, error, exitCode = null) => {
+      if (settled) return;
+      settled = true;
+      creation.status = status;
+      creation.error = error || null;
+      creation.exitCode = exitCode;
+      creation.finishedAt = Date.now();
+      const details = agentCreationDetails(request, {
+        creationId: creation.id,
+        pid: creation.pid,
+        exitCode,
+        stdoutBytes: Buffer.byteLength(stdout),
+        stderrBytes: Buffer.byteLength(stderr),
+      });
+      recordAudit(status === "succeeded" ? "agent.create.succeeded" : "agent.create.failed", `Agent creation ${status} in ${request.cwd}`, details);
+      broadcastAgentCreation(creation);
+      resolve({ creation: publicAgentCreationStatus(creation), complete: true });
+    };
+    child.stdout?.on("data", chunk => { stdout = capString(stdout + chunk.toString(), 4000); });
+    child.stderr?.on("data", chunk => { stderr = capString(stderr + chunk.toString(), 4000); });
+    child.once("error", error => finish("failed", error.message));
+    child.once("close", code => finish(code === 0 ? "succeeded" : "failed", code === 0 ? null : `process exited ${code}`, code));
+    setTimeout(() => finish("failed", "test mode timed out"), 5000).unref();
+  });
+  return waitForExit;
+}
+
 function requireSessionId(body) {
   const sessionId = body?.sessionId || body?.session?.id || body?.event?.sessionId;
   if (!sessionId || typeof sessionId !== "string") throw new Error("sessionId required");
@@ -1295,6 +1532,27 @@ const server = http.createServer(async (req, res) => {
       if (!ids.length) throw new Error("ids required");
       const updated = markInboxItemsRead(ids);
       sendJson(res, 200, { ok: true, inboxItems: updated.map(publicInboxItem) });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/v2/agents/create") {
+      const body = await readBody(req);
+      if (!config.agentCreation.enabled) {
+        recordAudit("agent.create.rejected", "Agent creation rejected: disabled", { reason: "disabled", cwd: typeof body.cwd === "string" ? capString(body.cwd, 2000) : null });
+        sendJson(res, 403, { ok: false, error: "agent creation disabled" });
+        return;
+      }
+      let request;
+      try {
+        request = validateAgentCreationRequest(body);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        recordAudit("agent.create.rejected", `Agent creation rejected: ${message}`, { reason: message });
+        sendJson(res, 400, { ok: false, error: message });
+        return;
+      }
+      const result = await startAgentCreation(request);
+      sendJson(res, 200, { ok: true, ...result });
       return;
     }
 

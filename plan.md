@@ -6,6 +6,7 @@
 - Phone access: Android connects over Tailscale or LAN to the VM on TCP `17878`, protected by bearer token from `~/.pi/agent/pi-hub/config.json`.
 - History: memory-only on the hub server. Each live Pi session sends its recent session entries on registration and event updates while running; no server-side transcript database for now.
 - First controls: Flutter app can view sessions, send prompts, abort current work, trigger compaction, switch model, and shutdown a selected Pi session.
+- Agent creation: disabled by default; when explicitly enabled, `/api/v2/agents/create` spawns only the configured command without shell interpolation and only inside configured workspace roots.
 
 ## Architecture
 
@@ -38,6 +39,7 @@ Flutter Android app
 
 2. Hardening
    - Add better command acknowledgements and visible command result status.
+   - Keep agent creation guarded with explicit config, audit events, and narrow workspace root allowlists.
    - Add optional PIN rotation command.
    - Add network setup help for Tailscale/LAN/firewall.
 

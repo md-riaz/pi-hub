@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import 'agent_create_sheet.dart';
 import 'diff_review_screen.dart';
+import 'hub_client.dart';
 import 'hub_models.dart';
 import 'inbox_screen.dart';
 import 'session_detail_screen.dart';
@@ -29,6 +31,7 @@ class MissionControlScreen extends StatelessWidget {
     required this.onMarkInboxRead,
     required this.onApprovalResponse,
     required this.onRespondToDiffReview,
+    required this.onCreateAgent,
   });
 
   final HubSnapshot? snapshot;
@@ -59,8 +62,12 @@ class MissionControlScreen extends StatelessWidget {
     String comment,
   )
   onRespondToDiffReview;
+  final Future<AgentCreateResult> Function(AgentCreateRequest request)
+  onCreateAgent;
 
   List<HubSession> get _sessions => snapshot?.sessions ?? const [];
+  bool get _canCreateAgent =>
+      snapshot?.server?.capabilities.agentCreation == true;
 
   Map<String, int> get _unreadBySession {
     final counts = <String, int>{};
@@ -78,6 +85,13 @@ class MissionControlScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Pi Hub'),
         actions: [
+          if (_canCreateAgent)
+            IconButton(
+              key: const ValueKey('agent-create-open'),
+              tooltip: 'Create agent',
+              onPressed: () => _showCreateAgent(context),
+              icon: const Icon(Icons.add_circle_outline),
+            ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Center(child: Text(connectionState)),
@@ -109,6 +123,14 @@ class MissionControlScreen extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Future<void> _showCreateAgent(BuildContext context) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => AgentCreateSheet(onCreate: onCreateAgent),
     );
   }
 

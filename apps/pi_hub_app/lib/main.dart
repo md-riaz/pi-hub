@@ -340,6 +340,7 @@ class _HubHomePageState extends State<HubHomePage> {
       onMarkInboxRead: _markInboxRead,
       onApprovalResponse: _respondToApproval,
       onRespondToDiffReview: _respondToDiffReview,
+      onCreateAgent: _client.createAgent,
     );
   }
 }

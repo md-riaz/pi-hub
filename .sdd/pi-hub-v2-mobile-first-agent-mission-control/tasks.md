@@ -161,7 +161,7 @@ Each task uses:
   - Evidence: Widget test renders multi-file fixture and submits changes-requested comment; `flutter analyze && flutter test`.
   - Review estimate: ~390 changed lines, 70 min.
 
-- [ ] T18 — Add guarded agent creation backend
+- [x] T18 — Add guarded agent creation backend
   - Files:
     - `pi-hub-server.mjs`
     - `README.md`
@@ -170,7 +170,7 @@ Each task uses:
   - Evidence: `node --check`; smoke disabled returns 403/400; enabled temp allowlist spawns configured harmless command in test mode; README documents risk.
   - Review estimate: ~380 changed lines, 75 min.
 
-- [ ] T19 — Add agent creation mobile form
+- [x] T19 — Add agent creation mobile form
   - Files:
     - `apps/pi_hub_app/lib/src/agent_create_sheet.dart`
     - `apps/pi_hub_app/lib/src/mission_control_screen.dart`

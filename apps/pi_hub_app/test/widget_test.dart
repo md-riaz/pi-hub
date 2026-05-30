@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:pi_hub_app/main.dart';
+import 'package:pi_hub_app/src/agent_create_sheet.dart';
 import 'package:pi_hub_app/src/approval_sheet.dart';
 import 'package:pi_hub_app/src/hub_client.dart';
 import 'package:pi_hub_app/src/diff_review_screen.dart';
@@ -619,6 +620,205 @@ void main() {
       find.byKey(const ValueKey('notification-banner-inbox-alert')),
       findsNothing,
     );
+    expect(tester.takeException(), isNull);
+  });
+
+  test('HubClient createAgent calls v2 create API', () async {
+    final previousOverrides = HttpOverrides.current;
+    HttpOverrides.global = null;
+    addTearDown(() => HttpOverrides.global = previousOverrides);
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    final requestSeen = Completer<Map<String, Object?>>();
+    server.listen((request) async {
+      final body = await utf8.decoder.bind(request).join();
+      requestSeen.complete({
+        'method': request.method,
+        'path': request.uri.path,
+        'authorization': request.headers.value(HttpHeaders.authorizationHeader),
+        'body': body,
+      });
+      request.response.headers.contentType = ContentType.json;
+      request.response.write(
+        jsonEncode({
+          'ok': true,
+          'complete': true,
+          'creation': {
+            'id': 'agent-create-one',
+            'status': 'succeeded',
+            'pid': 1234,
+          },
+        }),
+      );
+      await request.response.close();
+    });
+
+    final client = HubClient()
+      ..configure(
+        baseUrl: 'http://${server.address.host}:${server.port}/',
+        token: 'secret',
+      );
+    addTearDown(client.close);
+
+    final result = await client.createAgent(
+      AgentCreateRequest(
+        cwd: '/workspace/app',
+        name: 'Phone Agent',
+        model: 'gpt-5-codex',
+        initialPrompt: 'Start work',
+      ),
+    );
+    final request = await requestSeen.future;
+
+    expect(request['method'], 'POST');
+    expect(request['path'], '/api/v2/agents/create');
+    expect(request['authorization'], 'Bearer secret');
+    expect(jsonDecode(request['body']! as String), {
+      'cwd': '/workspace/app',
+      'name': 'Phone Agent',
+      'model': 'gpt-5-codex',
+      'initialPrompt': 'Start work',
+    });
+    expect(result.status, 'succeeded');
+    expect(result.id, 'agent-create-one');
+    expect(result.pid, 1234);
+  });
+
+  testWidgets('Agent create action hides when disabled', (
+    WidgetTester tester,
+  ) async {
+    final snapshot = HubSnapshot.fromJson({
+      'server': {
+        'capabilities': {'agentCreation': false},
+      },
+      'sessions': [],
+    });
+    final sendController = TextEditingController();
+    final serverController = TextEditingController();
+    final tokenController = TextEditingController();
+    addTearDown(sendController.dispose);
+    addTearDown(serverController.dispose);
+    addTearDown(tokenController.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(useMaterial3: true),
+        home: MissionControlScreen(
+          snapshot: snapshot,
+          selectedSession: null,
+          selectedSessionId: null,
+          connectionState: 'Connected',
+          connecting: false,
+          serverController: serverController,
+          tokenController: tokenController,
+          sendController: sendController,
+          onConnect: () {},
+          onSelected: (_) {},
+          onSend: () {},
+          onAbort: () {},
+          onCompact: () {},
+          onShutdown: () {},
+          onModel: () {},
+          onMarkInboxRead: (_) async {},
+          onApprovalResponse: (approval, response, comment) async {},
+          onRespondToDiffReview: (review, action, comment) async {},
+          onCreateAgent: (_) async =>
+              AgentCreateResult(status: 'unused', complete: true),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('agent-create-open')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Agent create form submits when enabled', (
+    WidgetTester tester,
+  ) async {
+    final snapshot = HubSnapshot.fromJson({
+      'server': {
+        'capabilities': {'agentCreation': true},
+      },
+      'sessions': [],
+    });
+    final sendController = TextEditingController();
+    final serverController = TextEditingController();
+    final tokenController = TextEditingController();
+    AgentCreateRequest? submitted;
+    addTearDown(sendController.dispose);
+    addTearDown(serverController.dispose);
+    addTearDown(tokenController.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(useMaterial3: true),
+        home: MissionControlScreen(
+          snapshot: snapshot,
+          selectedSession: null,
+          selectedSessionId: null,
+          connectionState: 'Connected',
+          connecting: false,
+          serverController: serverController,
+          tokenController: tokenController,
+          sendController: sendController,
+          onConnect: () {},
+          onSelected: (_) {},
+          onSend: () {},
+          onAbort: () {},
+          onCompact: () {},
+          onShutdown: () {},
+          onModel: () {},
+          onMarkInboxRead: (_) async {},
+          onApprovalResponse: (approval, response, comment) async {},
+          onRespondToDiffReview: (review, action, comment) async {},
+          onCreateAgent: (request) async {
+            submitted = request;
+            return AgentCreateResult(
+              status: 'succeeded',
+              complete: true,
+              id: 'agent-create-one',
+              pid: 1234,
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('agent-create-open')));
+    await tester.pumpAndSettle();
+    expect(find.byType(AgentCreateSheet), findsOneWidget);
+    expect(find.text('Create agent'), findsWidgets);
+    expect(
+      find.textContaining('Warning: starts a new Pi process'),
+      findsOneWidget,
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('agent-create-workspace')),
+      '/workspace/app',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('agent-create-name')),
+      'Phone Agent',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('agent-create-model')),
+      'gpt-5-codex',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('agent-create-prompt')),
+      'Start work',
+    );
+    await tester.tap(find.byKey(const ValueKey('agent-create-submit')));
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(submitted?.cwd, '/workspace/app');
+    expect(submitted?.name, 'Phone Agent');
+    expect(submitted?.model, 'gpt-5-codex');
+    expect(submitted?.initialPrompt, 'Start work');
+    expect(find.byKey(const ValueKey('agent-create-status')), findsOneWidget);
+    expect(find.textContaining('succeeded'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
