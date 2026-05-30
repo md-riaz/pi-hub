@@ -359,10 +359,10 @@ function networkHint(config: PiHubConfig): string {
 	const lanIPs = getLocalAddresses();
 	const lanUrls = lanIPs.map((ip: string) => `http://${ip}:${config.port}`).join(", ") || "none detected";
 	return [
-		`Pi Hub server: http://127.0.0.1:${config.port}`,
-		`LAN URLs (use in app): ${lanUrls}`,
+		`Local server: http://127.0.0.1:${config.port}`,
+		`Connect in app: ${lanUrls}`,
 		`Token: ${config.token}`,
-		`Android emulator: http://10.0.2.2:${config.port}`,
+		`If app cannot connect, allow inbound TCP ${config.port} in Windows/provider firewall.`,
 	].join("\n");
 }
 
