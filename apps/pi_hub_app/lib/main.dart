@@ -176,6 +176,64 @@ class _HubHomePageState extends State<HubHomePage> {
     }
   }
 
+  Future<void> _markInboxRead(HubInboxItem item) async {
+    final updated = await _client.markInboxRead(item.id);
+    if (!mounted || _snapshot == null) return;
+    setState(() {
+      for (final next in updated) {
+        _snapshot = _upsertInboxItem(_snapshot!, next);
+      }
+    });
+  }
+
+  HubSnapshot _upsertInboxItem(HubSnapshot snapshot, HubInboxItem item) {
+    final inboxItems = [...snapshot.inboxItems];
+    final index = inboxItems.indexWhere((current) => current.id == item.id);
+    if (index >= 0) {
+      inboxItems[index] = item;
+    } else {
+      inboxItems.add(item);
+    }
+    inboxItems.sort(
+      (a, b) => (b.updatedAt ?? b.createdAt ?? 0).compareTo(
+        a.updatedAt ?? a.createdAt ?? 0,
+      ),
+    );
+    final sessions = [
+      for (final session in snapshot.sessions)
+        if (session.id == item.sessionId)
+          session.withActivity(
+            inboxItems: _upsertSessionInboxItem(session.inboxItems, item),
+          )
+        else
+          session,
+    ];
+    return HubSnapshot(
+      server: snapshot.server,
+      sessions: sessions,
+      inboxItems: inboxItems,
+      commands: snapshot.commands,
+      approvals: snapshot.approvals,
+      diffReviews: snapshot.diffReviews,
+      auditEvents: snapshot.auditEvents,
+      auditSummary: snapshot.auditSummary,
+    );
+  }
+
+  List<HubInboxItem> _upsertSessionInboxItem(
+    List<HubInboxItem> items,
+    HubInboxItem item,
+  ) {
+    final next = [...items];
+    final index = next.indexWhere((current) => current.id == item.id);
+    if (index >= 0) {
+      next[index] = item;
+    } else {
+      next.add(item);
+    }
+    return next;
+  }
+
   @override
   Widget build(BuildContext context) {
     return MissionControlScreen(
@@ -194,6 +252,7 @@ class _HubHomePageState extends State<HubHomePage> {
       onCompact: () => _runControl('compact'),
       onShutdown: () => _runControl('shutdown'),
       onModel: _pickModel,
+      onMarkInboxRead: _markInboxRead,
     );
   }
 }

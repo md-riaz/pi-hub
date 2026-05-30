@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
 import 'hub_models.dart';
+import 'inbox_screen.dart';
 import 'session_detail_screen.dart';
 import 'widgets/agent_card.dart';
 import 'widgets/connection_bar.dart';
+import 'widgets/notification_banner.dart';
 
 class MissionControlScreen extends StatelessWidget {
   const MissionControlScreen({
@@ -23,6 +25,7 @@ class MissionControlScreen extends StatelessWidget {
     required this.onCompact,
     required this.onShutdown,
     required this.onModel,
+    required this.onMarkInboxRead,
   });
 
   final HubSnapshot? snapshot;
@@ -40,6 +43,7 @@ class MissionControlScreen extends StatelessWidget {
   final VoidCallback onCompact;
   final VoidCallback onShutdown;
   final VoidCallback onModel;
+  final Future<void> Function(HubInboxItem item) onMarkInboxRead;
 
   List<HubSession> get _sessions => snapshot?.sessions ?? const [];
 
@@ -74,11 +78,16 @@ class MissionControlScreen extends StatelessWidget {
               connecting: connecting,
               onConnect: onConnect,
             ),
+            NotificationBanner(
+              snapshot: snapshot,
+              connected: connectionState == 'Live',
+              onOpenSession: onSelected,
+            ),
             Expanded(
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  if (constraints.maxWidth < 720) return _buildNarrow(context);
-                  return _buildWide(context);
+                  if (constraints.maxWidth < 960) return _buildNarrow(context);
+                  return _buildWide(context, constraints.maxWidth);
                 },
               ),
             ),
@@ -91,52 +100,67 @@ class MissionControlScreen extends StatelessWidget {
   Widget _buildNarrow(BuildContext context) {
     final selected = selectedSession;
     return DefaultTabController(
-      length: 2,
-      child: Column(
-        children: [
-          Material(
-            color: Theme.of(context).colorScheme.surface,
-            child: const TabBar(
-              tabs: [
-                Tab(icon: Icon(Icons.dashboard), text: 'Agents'),
-                Tab(icon: Icon(Icons.terminal), text: 'Detail'),
-              ],
+      length: 3,
+      child: Builder(
+        builder: (tabContext) => Column(
+          children: [
+            Material(
+              color: Theme.of(context).colorScheme.surface,
+              child: const TabBar(
+                tabs: [
+                  Tab(icon: Icon(Icons.dashboard), text: 'Agents'),
+                  Tab(icon: Icon(Icons.inbox), text: 'Inbox'),
+                  Tab(icon: Icon(Icons.terminal), text: 'Detail'),
+                ],
+              ),
             ),
-          ),
-          Expanded(
-            child: TabBarView(
-              children: [
-                SessionList(
-                  sessions: _sessions,
-                  selectedId: selectedSessionId,
-                  unreadBySession: _unreadBySession,
-                  onSelected: onSelected,
-                ),
-                selected == null
-                    ? const Center(child: Text('No Pi sessions connected'))
-                    : SessionDetailScreen(
-                        session: selected,
-                        sendController: sendController,
-                        onSend: onSend,
-                        onAbort: onAbort,
-                        onCompact: onCompact,
-                        onShutdown: onShutdown,
-                        onModel: onModel,
-                      ),
-              ],
+            Expanded(
+              child: TabBarView(
+                children: [
+                  SessionList(
+                    sessions: _sessions,
+                    selectedId: selectedSessionId,
+                    unreadBySession: _unreadBySession,
+                    onSelected: (id) {
+                      onSelected(id);
+                      DefaultTabController.of(tabContext).animateTo(2);
+                    },
+                  ),
+                  InboxScreen(
+                    items: snapshot?.inboxItems ?? const [],
+                    sessions: _sessions,
+                    onMarkRead: onMarkInboxRead,
+                    onOpenSession: (id) {
+                      onSelected(id);
+                      DefaultTabController.of(tabContext).animateTo(2);
+                    },
+                  ),
+                  selected == null
+                      ? const Center(child: Text('No Pi sessions connected'))
+                      : SessionDetailScreen(
+                          session: selected,
+                          sendController: sendController,
+                          onSend: onSend,
+                          onAbort: onAbort,
+                          onCompact: onCompact,
+                          onShutdown: onShutdown,
+                          onModel: onModel,
+                        ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildWide(BuildContext context) {
+  Widget _buildWide(BuildContext context, double width) {
     final selected = selectedSession;
     return Row(
       children: [
         SizedBox(
-          width: 320,
+          width: width >= 1180 ? 320 : 280,
           child: SessionList(
             sessions: _sessions,
             selectedId: selected?.id,
@@ -157,6 +181,16 @@ class MissionControlScreen extends StatelessWidget {
                   onShutdown: onShutdown,
                   onModel: onModel,
                 ),
+        ),
+        const VerticalDivider(width: 1),
+        SizedBox(
+          width: width >= 1180 ? 360 : 320,
+          child: InboxScreen(
+            items: snapshot?.inboxItems ?? const [],
+            sessions: _sessions,
+            onMarkRead: onMarkInboxRead,
+            onOpenSession: onSelected,
+          ),
         ),
       ],
     );

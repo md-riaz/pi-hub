@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -7,8 +8,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pi_hub_app/main.dart';
 import 'package:pi_hub_app/src/hub_client.dart';
 import 'package:pi_hub_app/src/hub_models.dart';
+import 'package:pi_hub_app/src/inbox_screen.dart';
 import 'package:pi_hub_app/src/mission_control_screen.dart';
 import 'package:pi_hub_app/src/session_detail_screen.dart';
+import 'package:pi_hub_app/src/widgets/notification_banner.dart';
 
 void main() {
   testWidgets('Pi Hub renders connection form', (WidgetTester tester) async {
@@ -27,6 +30,59 @@ void main() {
     expect(client.baseUrl, 'http://host:17878');
     expect(client.token, 'secret');
     client.close();
+  });
+
+  test('HubClient markInboxRead calls v2 read API', () async {
+    final previousOverrides = HttpOverrides.current;
+    HttpOverrides.global = null;
+    addTearDown(() => HttpOverrides.global = previousOverrides);
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    final requestSeen = Completer<Map<String, Object?>>();
+    server.listen((request) async {
+      final body = await utf8.decoder.bind(request).join();
+      requestSeen.complete({
+        'method': request.method,
+        'path': request.uri.path,
+        'authorization': request.headers.value(HttpHeaders.authorizationHeader),
+        'body': body,
+      });
+      request.response.headers.contentType = ContentType.json;
+      request.response.write(
+        jsonEncode({
+          'ok': true,
+          'inboxItems': [
+            {
+              'id': 'inbox-one',
+              'type': 'tool_error',
+              'severity': 'error',
+              'title': 'Tool failed',
+              'readAt': 1770000000000,
+            },
+          ],
+        }),
+      );
+      await request.response.close();
+    });
+
+    final client = HubClient()
+      ..configure(
+        baseUrl: 'http://${server.address.host}:${server.port}/',
+        token: 'secret',
+      );
+    addTearDown(client.close);
+
+    final items = await client.markInboxRead('inbox-one');
+    final request = await requestSeen.future;
+
+    expect(request['method'], 'POST');
+    expect(request['path'], '/api/v2/inbox/read');
+    expect(request['authorization'], 'Bearer secret');
+    expect(jsonDecode(request['body']! as String), {
+      'ids': ['inbox-one'],
+    });
+    expect(items.single.id, 'inbox-one');
+    expect(items.single.unread, isFalse);
   });
 
   testWidgets('Mission control renders health cards from fixture', (
@@ -77,6 +133,176 @@ void main() {
     expect(find.text('ctx 62%'), findsOneWidget);
     expect(find.text('1 unread'), findsWidgets);
     expect(find.text('1 pending'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Inbox renders unread count and calls mark read', (
+    WidgetTester tester,
+  ) async {
+    final snapshot = HubSnapshot.fromJson({
+      'sessions': [
+        {
+          'id': 'session-inbox',
+          'name': 'Inbox Agent',
+          'cwd': '/workspace/inbox',
+          'model': 'gpt-5-codex',
+          'pid': 901,
+          'status': 'idle',
+          'online': true,
+        },
+      ],
+      'inboxItems': [
+        {
+          'id': 'inbox-unread',
+          'sessionId': 'session-inbox',
+          'type': 'command_failure',
+          'severity': 'error',
+          'title': 'Command failed',
+          'body': 'target model unavailable',
+          'createdAt': 1770000000000,
+          'readAt': null,
+          'actionRef': {'kind': 'command', 'id': 'cmd-failed'},
+        },
+        {
+          'id': 'inbox-read',
+          'sessionId': 'session-inbox',
+          'type': 'stale',
+          'severity': 'warning',
+          'title': 'Agent stale',
+          'body': 'missed heartbeat',
+          'createdAt': 1769999990000,
+          'readAt': 1770000001000,
+        },
+      ],
+    });
+    HubInboxItem? marked;
+    String? opened;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(useMaterial3: true),
+        home: Scaffold(
+          body: InboxScreen(
+            items: snapshot.inboxItems,
+            sessions: snapshot.sessions,
+            onMarkRead: (item) async => marked = item,
+            onOpenSession: (id) => opened = id,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('inbox-unread-count')), findsOneWidget);
+    expect(find.text('Inbox · 1 unread'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('inbox-item-inbox-unread')),
+      findsOneWidget,
+    );
+    expect(find.text('Command failed'), findsOneWidget);
+    expect(find.text('Unread'), findsOneWidget);
+    expect(find.text('Read'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('inbox-mark-read-inbox-unread')),
+    );
+    await tester.pump();
+    expect(marked?.id, 'inbox-unread');
+
+    await tester.tap(find.byKey(const ValueKey('inbox-open-inbox-unread')));
+    await tester.pump();
+    expect(opened, 'session-inbox');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Notification banner appears for new stream event', (
+    WidgetTester tester,
+  ) async {
+    final base = HubSnapshot.fromJson({
+      'sessions': [
+        {
+          'id': 'session-alert',
+          'name': 'Alert Agent',
+          'cwd': '/workspace/alert',
+          'model': 'gpt-5-codex',
+          'pid': 902,
+          'status': 'idle',
+          'online': true,
+        },
+      ],
+      'inboxItems': [],
+    });
+    final next = HubSnapshot.fromJson({
+      'sessions': [
+        {
+          'id': 'session-alert',
+          'name': 'Alert Agent',
+          'cwd': '/workspace/alert',
+          'model': 'gpt-5-codex',
+          'pid': 902,
+          'status': 'idle',
+          'online': true,
+        },
+      ],
+      'inboxItems': [
+        {
+          'id': 'inbox-alert',
+          'sessionId': 'session-alert',
+          'type': 'tool_error',
+          'severity': 'error',
+          'title': 'Tool failed',
+          'body': 'shell_command failed',
+          'createdAt': 1770000000000,
+          'readAt': null,
+          'actionRef': {'kind': 'session', 'id': 'session-alert'},
+        },
+      ],
+    });
+    String? opened;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(useMaterial3: true),
+        home: Scaffold(
+          body: NotificationBanner(
+            snapshot: base,
+            connected: true,
+            onOpenSession: (id) => opened = id,
+          ),
+        ),
+      ),
+    );
+    expect(
+      find.byKey(const ValueKey('notification-banner-inbox-alert')),
+      findsNothing,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(useMaterial3: true),
+        home: Scaffold(
+          body: NotificationBanner(
+            snapshot: next,
+            connected: true,
+            onOpenSession: (id) => opened = id,
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey('notification-banner-inbox-alert')),
+      findsOneWidget,
+    );
+    expect(find.text('Tool failed'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey('notification-open-inbox-alert')),
+    );
+    await tester.pump();
+    expect(opened, 'session-alert');
+    expect(
+      find.byKey(const ValueKey('notification-banner-inbox-alert')),
+      findsNothing,
+    );
     expect(tester.takeException(), isNull);
   });
 

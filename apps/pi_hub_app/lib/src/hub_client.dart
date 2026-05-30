@@ -51,12 +51,55 @@ class HubClient {
         snapshot = HubSnapshot.fromJson(
           data['snapshot'] as Map<String, dynamic>,
         );
-      } else if (data['session'] != null) {
-        snapshot = (snapshot ?? HubSnapshot.empty()).upsert(
-          HubSession.fromJson(data['session'] as Map<String, dynamic>),
-        );
+      } else {
+        if (data['session'] != null) {
+          snapshot = (snapshot ?? HubSnapshot.empty()).upsert(
+            HubSession.fromJson(data['session'] as Map<String, dynamic>),
+          );
+        }
+        if (data['inboxItem'] != null) {
+          snapshot = _upsertInboxItemInSnapshot(
+            snapshot ?? HubSnapshot.empty(),
+            HubInboxItem.fromJson(_stringKeyMap(data['inboxItem'] as Map)),
+          );
+        }
+        if (data['command'] != null) {
+          snapshot = _upsertCommandInSnapshot(
+            snapshot ?? HubSnapshot.empty(),
+            _commandFromStreamData(data),
+          );
+        }
       }
       if (snapshot != null) yield snapshot;
+    }
+  }
+
+  Future<List<HubInboxItem>> markInboxRead(String id) async {
+    final client = HttpClient();
+    try {
+      final request = await client.postUrl(
+        Uri.parse('$baseUrl/api/v2/inbox/read'),
+      );
+      request.headers.contentType = ContentType.json;
+      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+      request.write(
+        jsonEncode({
+          'ids': [id],
+        }),
+      );
+      final response = await request.close();
+      final body = await response.transform(utf8.decoder).join();
+      if (response.statusCode != 200) {
+        throw Exception('${response.statusCode}: $body');
+      }
+      final data = jsonDecode(body);
+      if (data is! Map || data['inboxItems'] is! List) return const [];
+      return [
+        for (final item in data['inboxItems'] as List)
+          if (item is Map) HubInboxItem.fromJson(_stringKeyMap(item)),
+      ];
+    } finally {
+      client.close(force: true);
     }
   }
 
@@ -106,4 +149,118 @@ class HubClient {
   void close() {
     _streamClient?.close(force: true);
   }
+}
+
+HubSnapshot _upsertInboxItemInSnapshot(
+  HubSnapshot snapshot,
+  HubInboxItem item,
+) {
+  final inboxItems = [...snapshot.inboxItems];
+  final index = inboxItems.indexWhere((current) => current.id == item.id);
+  if (index >= 0) {
+    inboxItems[index] = item;
+  } else {
+    inboxItems.add(item);
+  }
+  inboxItems.sort(_compareInboxItems);
+  final sessions = [
+    for (final session in snapshot.sessions)
+      if (item.sessionId == session.id)
+        session.withActivity(
+          inboxItems: _upsertSessionInboxItem(session.inboxItems, item),
+        )
+      else
+        session,
+  ];
+  return HubSnapshot(
+    server: snapshot.server,
+    sessions: sessions,
+    inboxItems: inboxItems,
+    commands: snapshot.commands,
+    approvals: snapshot.approvals,
+    diffReviews: snapshot.diffReviews,
+    auditEvents: snapshot.auditEvents,
+    auditSummary: snapshot.auditSummary,
+  );
+}
+
+HubSnapshot _upsertCommandInSnapshot(HubSnapshot snapshot, HubCommand command) {
+  final commands = [...snapshot.commands];
+  final index = commands.indexWhere((current) => current.id == command.id);
+  if (index >= 0) {
+    commands[index] = command;
+  } else {
+    commands.add(command);
+  }
+  commands.sort(_compareCommands);
+  final sessions = [
+    for (final session in snapshot.sessions)
+      if (command.sessionId == session.id)
+        session.withActivity(
+          commands: _upsertSessionCommand(session.commands, command),
+        )
+      else
+        session,
+  ];
+  return HubSnapshot(
+    server: snapshot.server,
+    sessions: sessions,
+    inboxItems: snapshot.inboxItems,
+    commands: commands,
+    approvals: snapshot.approvals,
+    diffReviews: snapshot.diffReviews,
+    auditEvents: snapshot.auditEvents,
+    auditSummary: snapshot.auditSummary,
+  );
+}
+
+List<HubInboxItem> _upsertSessionInboxItem(
+  List<HubInboxItem> items,
+  HubInboxItem item,
+) {
+  final next = [...items];
+  final index = next.indexWhere((current) => current.id == item.id);
+  if (index >= 0) {
+    next[index] = item;
+  } else {
+    next.add(item);
+  }
+  next.sort(_compareInboxItems);
+  return next;
+}
+
+HubCommand _commandFromStreamData(Map<String, dynamic> data) {
+  final command = _stringKeyMap(data['command'] as Map);
+  command['sessionId'] ??= data['sessionId'];
+  command['createdAt'] ??= command['timestamp'];
+  return HubCommand.fromJson(command);
+}
+
+List<HubCommand> _upsertSessionCommand(
+  List<HubCommand> commands,
+  HubCommand command,
+) {
+  final next = [...commands];
+  final index = next.indexWhere((current) => current.id == command.id);
+  if (index >= 0) {
+    next[index] = command;
+  } else {
+    next.add(command);
+  }
+  next.sort(_compareCommands);
+  return next;
+}
+
+int _compareInboxItems(HubInboxItem a, HubInboxItem b) {
+  return (b.updatedAt ?? b.createdAt ?? 0).compareTo(
+    a.updatedAt ?? a.createdAt ?? 0,
+  );
+}
+
+int _compareCommands(HubCommand a, HubCommand b) {
+  return (b.updatedAt ?? 0).compareTo(a.updatedAt ?? 0);
+}
+
+Map<String, dynamic> _stringKeyMap(Map value) {
+  return value.map((key, value) => MapEntry(key.toString(), value));
 }

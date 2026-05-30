@@ -106,7 +106,7 @@ Each task uses:
   - Evidence: `node --check pi-hub-server.mjs`; smoke creates tool error, reads item, snapshot updates readAt.
   - Review estimate: ~380 changed lines, 60 min.
 
-- [ ] T12 — Add Flutter inbox screen
+- [x] T12 — Add Flutter inbox screen
   - Files:
     - `apps/pi_hub_app/lib/src/inbox_screen.dart`
     - `apps/pi_hub_app/lib/src/mission_control_screen.dart`
@@ -116,7 +116,7 @@ Each task uses:
   - Evidence: Widget tests for unread count and mark-read call; `flutter analyze && flutter test`.
   - Review estimate: ~370 changed lines, 60 min.
 
-- [ ] T13 — Add connected in-app notifications
+- [x] T13 — Add connected in-app notifications
   - Files:
     - `apps/pi_hub_app/lib/src/mission_control_screen.dart`
     - `apps/pi_hub_app/lib/src/widgets/notification_banner.dart`
