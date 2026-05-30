@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { homedir } from "os";
+import { homedir, networkInterfaces } from "os";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -344,9 +344,26 @@ function assistantPartialToItem(message: any): HubItem | null {
 	return { ...item, id: "live-assistant", timestamp: Date.now() };
 }
 
+function getLocalAddresses(): string[] {
+	const nets = networkInterfaces();
+	const out: string[] = [];
+	for (const net of Object.values(nets)) {
+		for (const addr of net || []) {
+			if (addr.family === "IPv4" && !addr.internal) out.push(addr.address);
+		}
+	}
+	return out;
+}
+
 function networkHint(config: PiHubConfig): string {
-	const local = serverBaseUrl(config);
-	return `Pi Hub server: ${local}\nToken: ${config.token}\nAndroid emulator: http://10.0.2.2:${config.port}\nPhone on LAN: use Windows VM IP with port ${config.port}; allow firewall if needed.`;
+	const lanIPs = getLocalAddresses();
+	const lanUrls = lanIPs.map((ip: string) => `http://${ip}:${config.port}`).join(", ") || "none detected";
+	return [
+		`Pi Hub server: http://127.0.0.1:${config.port}`,
+		`LAN URLs (use in app): ${lanUrls}`,
+		`Token: ${config.token}`,
+		`Android emulator: http://10.0.2.2:${config.port}`,
+	].join("\n");
 }
 
 export default function piHubExtension(pi: ExtensionAPI) {
@@ -690,9 +707,9 @@ export default function piHubExtension(pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("hub", {
-		description: "Pi Hub dashboard bridge: /hub [status|info|start|token]",
+		description: "Pi Hub dashboard bridge: /hub [status|info|start|stop]",
 		getArgumentCompletions(prefix: string) {
-			return ["status", "info", "start", "token"].filter((item) => item.startsWith(prefix)).map((value) => ({ value, label: value }));
+			return ["status", "info", "start", "stop"].filter((item) => item.startsWith(prefix)).map((value) => ({ value, label: value }));
 		},
 		async handler(args, ctx) {
 			const sub = args.trim().toLowerCase();
@@ -707,12 +724,24 @@ export default function piHubExtension(pi: ExtensionAPI) {
 				}
 				return;
 			}
-			if (sub === "token") {
-				ctx.ui.notify([
-					"═══ Pi Hub Token ═══",
-					`Token: ${config.token}`,
-					`Config: ${configPath()}`,
-				].join("\n"), "info");
+			if (sub === "stop") {
+				const pid = readPid();
+				if (pid && isProcessRunning(pid)) {
+					try {
+						process.kill(pid);
+						ctx.ui.notify(`Pi Hub server stopped (PID ${pid}).`, "info");
+					} catch (error) {
+						ctx.ui.notify(`Failed to stop server (PID ${pid}): ${error instanceof Error ? error.message : String(error)}`, "error");
+					}
+				} else {
+					ctx.ui.notify("Pi Hub server is not running.", "warning");
+				}
+				serverOk = false;
+				setUiStatus("Hub ✗");
+				if (presenceTimer) clearInterval(presenceTimer);
+				if (pollTimer) clearInterval(pollTimer);
+				presenceTimer = null;
+				pollTimer = null;
 				return;
 			}
 			if (sub === "info" || sub === "status" || !sub) {
@@ -727,7 +756,7 @@ export default function piHubExtension(pi: ExtensionAPI) {
 				].join("\n"), serverOk ? "info" : "warning");
 				return;
 			}
-			ctx.ui.notify("Unknown /hub command. Use /hub, /hub info, /hub start, or /hub token.", "warning");
+			ctx.ui.notify("Unknown /hub command. Use /hub, /hub info, /hub start, or /hub stop.", "warning");
 		},
 	});
 }
