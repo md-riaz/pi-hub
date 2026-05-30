@@ -355,6 +355,15 @@ function getLocalAddresses(): string[] {
 	return out;
 }
 
+function firewallHint(config: PiHubConfig): string {
+	return [
+		"Run this once in Administrator PowerShell if phone cannot connect:",
+		`New-NetFirewallRule -DisplayName "Pi Hub TCP ${config.port}" -Direction Inbound -Action Allow -Protocol TCP -LocalPort ${config.port}`,
+		"",
+		"If this is a VPS/cloud host, also allow the same TCP port in the provider firewall/security group.",
+	].join("\n");
+}
+
 function networkHint(config: PiHubConfig): string {
 	const lanIPs = getLocalAddresses();
 	const lanUrls = lanIPs.map((ip: string) => `http://${ip}:${config.port}`).join(", ") || "none detected";
@@ -362,7 +371,8 @@ function networkHint(config: PiHubConfig): string {
 		`Local server: http://127.0.0.1:${config.port}`,
 		`Connect in app: ${lanUrls}`,
 		`Token: ${config.token}`,
-		`If app cannot connect, allow inbound TCP ${config.port} in Windows/provider firewall.`,
+		"",
+		firewallHint(config),
 	].join("\n");
 }
 
@@ -719,9 +729,9 @@ export default function piHubExtension(pi: ExtensionAPI) {
 	}
 
 	pi.registerCommand("hub", {
-		description: "Pi Hub: /hub [info|start|stop|server stop]",
+		description: "Pi Hub: /hub [info|start|stop|server stop|firewall]",
 		getArgumentCompletions(prefix: string) {
-			return ["status", "info", "start", "stop", "server stop"].filter((item) => item.startsWith(prefix)).map((value) => ({ value, label: value }));
+			return ["status", "info", "start", "stop", "server stop", "firewall"].filter((item) => item.startsWith(prefix)).map((value) => ({ value, label: value }));
 		},
 		async handler(args, ctx) {
 			const sub = args.trim().toLowerCase();
@@ -761,6 +771,10 @@ export default function piHubExtension(pi: ExtensionAPI) {
 				}
 				return;
 			}
+			if (sub === "firewall") {
+				ctx.ui.notify(firewallHint(config), "info");
+				return;
+			}
 			if (sub === "info" || sub === "status" || !sub) {
 				const pid = readPid();
 				ctx.ui.notify([
@@ -773,7 +787,7 @@ export default function piHubExtension(pi: ExtensionAPI) {
 				].join("\n"), serverOk ? "info" : "warning");
 				return;
 			}
-			ctx.ui.notify("Unknown /hub command. Use: /hub info, /hub start, /hub stop, /hub server stop", "warning");
+			ctx.ui.notify("Unknown /hub command. Use: /hub info, /hub start, /hub stop, /hub server stop, /hub firewall", "warning");
 		},
 	});
 }

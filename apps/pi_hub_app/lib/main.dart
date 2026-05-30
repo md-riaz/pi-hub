@@ -108,6 +108,27 @@ class _HubHomePageState extends State<HubHomePage> {
     await prefs.setString(_prefToken, _tokenController.text);
   }
 
+  String _connectionErrorHelp(Object error) {
+    final message = error.toString();
+    final lower = message.toLowerCase();
+    if (lower.contains('401') || lower.contains('unauthorized')) {
+      return 'Unauthorized: token is wrong or stale. Copy token from /hub info.';
+    }
+    if (lower.contains('connection refused')) {
+      return 'Connection refused: hub server is not running or wrong IP/port. Run /hub start and /hub info.';
+    }
+    if (lower.contains('timed out') || lower.contains('timeout')) {
+      return 'Connection timed out: phone cannot reach hub. Use IP from /hub info and allow inbound TCP 17878 in Windows/provider firewall.';
+    }
+    if (lower.contains('cleartext')) {
+      return 'HTTP blocked by Android cleartext policy. Install latest APK release.';
+    }
+    if (lower.contains('socketexception') || lower.contains('network is unreachable') || lower.contains('failed host lookup')) {
+      return 'Network unreachable: phone and hub need a route. Use same WiFi/LAN IP from /hub info, or open firewall/provider port.';
+    }
+    return 'Connection failed: $message';
+  }
+
   Future<void> _connect() async {
     if (_connecting) return;
     setState(() {
@@ -156,8 +177,14 @@ class _HubHomePageState extends State<HubHomePage> {
       if (!mounted) return;
       setState(() {
         _connecting = false;
-        _connectionState = 'Failed: $error';
+        _connectionState = 'Failed';
       });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_connectionErrorHelp(error)),
+          duration: const Duration(seconds: 8),
+        ),
+      );
     }
   }
 

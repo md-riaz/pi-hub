@@ -145,8 +145,12 @@ class HubClient {
   Uri _uri(String path) =>
       Uri.parse('$baseUrl$path').replace(queryParameters: {'token': token});
 
+  HttpClient _newHttpClient() {
+    return HttpClient()..connectionTimeout = const Duration(seconds: 8);
+  }
+
   Future<HubSnapshot> fetchSnapshot() async {
-    final client = HttpClient();
+    final client = _newHttpClient();
     try {
       final request = await client.getUrl(_uri('/api/snapshot'));
       final response = await request.close();
@@ -162,7 +166,7 @@ class HubClient {
 
   Stream<HubSnapshot> streamSnapshots() async* {
     _streamClient?.close(force: true);
-    _streamClient = HttpClient();
+    _streamClient = _newHttpClient();
     final request = await _streamClient!.getUrl(_uri('/api/stream'));
     final response = await request.close();
     if (response.statusCode != 200) {
@@ -223,7 +227,7 @@ class HubClient {
     String action, {
     String comment = '',
   }) async {
-    final client = HttpClient();
+    final client = _newHttpClient();
     try {
       final request = await client.postUrl(
         Uri.parse(
@@ -281,7 +285,7 @@ class HubClient {
     String path,
     Map<String, Object?> payload,
   ) async {
-    final client = HttpClient();
+    final client = _newHttpClient();
     try {
       final request = await client.postUrl(Uri.parse('$baseUrl$path'));
       request.headers.contentType = ContentType.json;
@@ -319,7 +323,7 @@ class HubClient {
   }
 
   Future<AgentCreateResult> createAgent(AgentCreateRequest requestBody) async {
-    final client = HttpClient();
+    final client = _newHttpClient();
     try {
       final request = await client.postUrl(
         Uri.parse('$baseUrl/api/v2/agents/create'),
@@ -341,7 +345,7 @@ class HubClient {
   }
 
   Future<void> sendMessage(String sessionId, String text) async {
-    final client = HttpClient();
+    final client = _newHttpClient();
     try {
       final request = await client.postUrl(Uri.parse('$baseUrl/api/send'));
       request.headers.contentType = ContentType.json;
@@ -373,7 +377,7 @@ class HubClient {
     String action, {
     String? modelId,
   }) async {
-    final client = HttpClient();
+    final client = _newHttpClient();
     try {
       final request = await client.postUrl(Uri.parse('$baseUrl/api/control'));
       request.headers.contentType = ContentType.json;

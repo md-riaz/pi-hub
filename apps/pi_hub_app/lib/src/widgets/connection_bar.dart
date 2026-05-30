@@ -26,7 +26,7 @@ class ConnectionBar extends StatelessWidget {
             controller: serverController,
             decoration: const InputDecoration(
               labelText: 'Server URL',
-              hintText: '10.0.2.2:17878 or hub-host-ip:17878',
+              hintText: 'hub-host-ip:17878 from /hub info',
               border: OutlineInputBorder(),
             ),
           ),
