@@ -23,8 +23,11 @@ class MissionControlScreen extends StatelessWidget {
     required this.serverController,
     required this.tokenController,
     required this.sendController,
+    required this.detailSessionId,
     required this.onConnect,
     required this.onSelected,
+    required this.onOpenDetail,
+    required this.onCloseDetail,
     required this.onSend,
     required this.onAbort,
     required this.onCompact,
@@ -47,8 +50,11 @@ class MissionControlScreen extends StatelessWidget {
   final TextEditingController serverController;
   final TextEditingController tokenController;
   final TextEditingController sendController;
+  final String? detailSessionId;
   final VoidCallback onConnect;
   final ValueChanged<String> onSelected;
+  final ValueChanged<String> onOpenDetail;
+  final VoidCallback onCloseDetail;
   final VoidCallback onSend;
   final VoidCallback onAbort;
   final VoidCallback onCompact;
@@ -80,6 +86,14 @@ class MissionControlScreen extends StatelessWidget {
   bool get _canCollaborate =>
       snapshot?.server?.capabilities.collaboration == true;
 
+  HubSession? _sessionById(String? id) {
+    if (id == null) return null;
+    for (final session in _sessions) {
+      if (session.id == id) return session;
+    }
+    return null;
+  }
+
   Map<String, int> get _unreadBySession {
     final counts = <String, int>{};
     for (final item in snapshot?.inboxItems ?? const <HubInboxItem>[]) {
@@ -92,6 +106,35 @@ class MissionControlScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final detailSession = _sessionById(detailSessionId);
+    if (detailSession != null) {
+      return Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: onCloseDetail,
+          ),
+          title: Text(detailSession.displayName),
+          actions: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Center(child: Text(connectionState)),
+            ),
+          ],
+        ),
+        body: SafeArea(
+          child: SessionDetailScreen(
+            session: detailSession,
+            sendController: sendController,
+            onSend: onSend,
+            onAbort: onAbort,
+            onCompact: onCompact,
+            onShutdown: onShutdown,
+            onModel: onModel,
+          ),
+        ),
+      );
+    }
     return Scaffold(
       appBar: AppBar(
         title: const Text('Pi Hub'),
@@ -168,9 +211,8 @@ class MissionControlScreen extends StatelessWidget {
   }
 
   Widget _buildNarrow(BuildContext context) {
-    final selected = selectedSession;
     return DefaultTabController(
-      length: _canCollaborate ? 4 : 3,
+      length: _canCollaborate ? 3 : 2,
       child: Builder(
         builder: (tabContext) => Column(
           children: [
@@ -181,7 +223,6 @@ class MissionControlScreen extends StatelessWidget {
                 tabs: [
                   const Tab(icon: Icon(Icons.dashboard), text: 'Agents'),
                   const Tab(icon: Icon(Icons.inbox), text: 'Inbox'),
-                  const Tab(icon: Icon(Icons.terminal), text: 'Detail'),
                   if (_canCollaborate)
                     const Tab(icon: Icon(Icons.forum), text: 'Collab'),
                 ],
@@ -194,34 +235,17 @@ class MissionControlScreen extends StatelessWidget {
                     sessions: _sessions,
                     selectedId: selectedSessionId,
                     unreadBySession: _unreadBySession,
-                    onSelected: (id) {
-                      onSelected(id);
-                      DefaultTabController.of(tabContext).animateTo(2);
-                    },
+                    onSelected: onOpenDetail,
                   ),
                   InboxScreen(
                     items: snapshot?.inboxItems ?? const [],
                     sessions: _sessions,
                     onMarkRead: onMarkInboxRead,
-                    onOpenSession: (id) {
-                      onSelected(id);
-                      DefaultTabController.of(tabContext).animateTo(2);
-                    },
+                    onOpenSession: onOpenDetail,
                     approvals: snapshot?.approvals ?? const [],
                     onApprovalResponse: onApprovalResponse,
                     onOpenDiffReview: (id) => _openDiffReview(context, id),
                   ),
-                  selected == null
-                      ? const EmptyAgentState()
-                      : SessionDetailScreen(
-                          session: selected,
-                          sendController: sendController,
-                          onSend: onSend,
-                          onAbort: onAbort,
-                          onCompact: onCompact,
-                          onShutdown: onShutdown,
-                          onModel: onModel,
-                        ),
                   if (_canCollaborate)
                     CollaborationScreen(
                       sessions: _sessions,

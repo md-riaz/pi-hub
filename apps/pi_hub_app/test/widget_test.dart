@@ -931,8 +931,11 @@ void main() {
           serverController: serverController,
           tokenController: tokenController,
           sendController: sendController,
+          detailSessionId: null,
           onConnect: () {},
           onSelected: (_) {},
+          onOpenDetail: (_) {},
+          onCloseDetail: () {},
           onSend: () {},
           onAbort: () {},
           onCompact: () {},
@@ -984,8 +987,11 @@ void main() {
           serverController: serverController,
           tokenController: tokenController,
           sendController: sendController,
+          detailSessionId: null,
           onConnect: () {},
           onSelected: (_) {},
+          onOpenDetail: (_) {},
+          onCloseDetail: () {},
           onSend: () {},
           onAbort: () {},
           onCompact: () {},
@@ -1036,8 +1042,11 @@ void main() {
           serverController: serverController,
           tokenController: tokenController,
           sendController: sendController,
+          detailSessionId: null,
           onConnect: () {},
           onSelected: (_) {},
+          onOpenDetail: (_) {},
+          onCloseDetail: () {},
           onSend: () {},
           onAbort: () {},
           onCompact: () {},
@@ -1176,6 +1185,9 @@ void main() {
         ),
       ),
     );
+
+    await tester.tap(find.text('commands (3)'));
+    await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('command-status-strip')), findsOneWidget);
     expect(

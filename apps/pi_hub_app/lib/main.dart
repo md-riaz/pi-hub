@@ -55,6 +55,7 @@ class _HubHomePageState extends State<HubHomePage> {
   HubSnapshot? _snapshot;
   StreamSubscription<HubSnapshot>? _subscription;
   String? _selectedSessionId;
+  String? _detailSessionId;
   String _connectionState = 'Disconnected';
   bool _connecting = false;
 
@@ -97,7 +98,10 @@ class _HubHomePageState extends State<HubHomePage> {
       _tokenController.text = savedToken;
     }
     // Auto-connect if we have saved credentials
-    if (savedUrl != null && savedUrl.isNotEmpty && savedToken != null && savedToken.isNotEmpty) {
+    if (savedUrl != null &&
+        savedUrl.isNotEmpty &&
+        savedToken != null &&
+        savedToken.isNotEmpty) {
       _connect();
     }
   }
@@ -123,7 +127,9 @@ class _HubHomePageState extends State<HubHomePage> {
     if (lower.contains('cleartext')) {
       return 'HTTP blocked by Android cleartext policy. Install latest APK release.';
     }
-    if (lower.contains('socketexception') || lower.contains('network is unreachable') || lower.contains('failed host lookup')) {
+    if (lower.contains('socketexception') ||
+        lower.contains('network is unreachable') ||
+        lower.contains('failed host lookup')) {
       return 'Network unreachable: phone and hub need a route. Use same WiFi/LAN IP from /hub info, or open firewall/provider port.';
     }
     return 'Connection failed: $message';
@@ -163,6 +169,10 @@ class _HubHomePageState extends State<HubHomePage> {
             _snapshot = snapshot;
             if (_selectedSessionId == null && snapshot.sessions.isNotEmpty) {
               _selectedSessionId = snapshot.sessions.first.id;
+            }
+            if (_detailSessionId != null &&
+                !snapshot.sessions.any((s) => s.id == _detailSessionId)) {
+              _detailSessionId = null;
             }
             _connectionState = 'Live';
           });
@@ -463,8 +473,14 @@ class _HubHomePageState extends State<HubHomePage> {
       serverController: _serverController,
       tokenController: _tokenController,
       sendController: _sendController,
+      detailSessionId: _detailSessionId,
       onConnect: _connect,
       onSelected: (id) => setState(() => _selectedSessionId = id),
+      onOpenDetail: (id) => setState(() {
+        _selectedSessionId = id;
+        _detailSessionId = id;
+      }),
+      onCloseDetail: () => setState(() => _detailSessionId = null),
       onSend: _sendMessage,
       onAbort: () => _runControl('abort'),
       onCompact: () => _runControl('compact'),

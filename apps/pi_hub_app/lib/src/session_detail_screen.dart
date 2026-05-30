@@ -3,6 +3,17 @@ import 'package:flutter/material.dart';
 import 'hub_models.dart';
 import 'widgets/command_status_strip.dart';
 
+const _terminalBg = Color(0xff05070c);
+const _terminalPanel = Color(0xff0b1020);
+const _terminalBorder = Color(0xff253044);
+const _terminalText = Color(0xffd6deeb);
+const _terminalMuted = Color(0xff7f8ea3);
+const _terminalGreen = Color(0xff22c55e);
+const _terminalBlue = Color(0xff60a5fa);
+const _terminalPurple = Color(0xffc084fc);
+const _terminalOrange = Color(0xfff59e0b);
+const _terminalRed = Color(0xfff87171);
+
 class SessionDetailScreen extends StatelessWidget {
   const SessionDetailScreen({
     super.key,
@@ -29,65 +40,57 @@ class SessionDetailScreen extends StatelessWidget {
       ...session.history,
       if (session.liveMessage != null) session.liveMessage!,
     ];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SessionHeader(session: session),
-        ControlBar(
-          canSelectModel: session.availableModels.isNotEmpty,
-          onAbort: onAbort,
-          onCompact: onCompact,
-          onShutdown: onShutdown,
-          onModel: onModel,
-        ),
-        const Divider(height: 1),
-        if (session.commands.isNotEmpty) ...[
-          CommandStatusStrip(
-            commands: session.commands,
-            inboxItems: session.inboxItems,
+    return DecoratedBox(
+      decoration: const BoxDecoration(color: _terminalBg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SessionHeader(session: session),
+          ControlBar(
+            canSelectModel: session.availableModels.isNotEmpty,
+            onAbort: onAbort,
+            onCompact: onCompact,
+            onShutdown: onShutdown,
+            onModel: onModel,
           ),
-          const Divider(height: 1),
-        ],
-        if (session.tools.isNotEmpty) ToolStrip(tools: session.tools),
-        Expanded(
-          child: items.isEmpty
-              ? const Center(child: Text('No conversation history yet'))
-              : ListView.builder(
-                  padding: const EdgeInsets.all(12),
-                  reverse: true,
-                  itemCount: items.length,
-                  itemBuilder: (context, index) {
-                    final item = items[items.length - 1 - index];
-                    return MessageCard(item: item);
-                  },
-                ),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: sendController,
-                  minLines: 1,
-                  maxLines: 4,
-                  decoration: InputDecoration(
-                    labelText: 'Send prompt to ${session.displayName}',
-                    border: const OutlineInputBorder(),
+          if (session.commands.isNotEmpty)
+            TerminalSection(
+              title: 'commands',
+              count: session.commands.length,
+              child: CommandStatusStrip(
+                commands: session.commands,
+                inboxItems: session.inboxItems,
+              ),
+            ),
+          if (session.tools.isNotEmpty) ToolStrip(tools: session.tools),
+          Expanded(
+            child: items.isEmpty
+                ? const Center(
+                    child: Text(
+                      'No conversation history yet',
+                      style: TextStyle(
+                        color: _terminalMuted,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(10, 8, 10, 12),
+                    reverse: true,
+                    itemCount: items.length,
+                    itemBuilder: (context, index) {
+                      final item = items[items.length - 1 - index];
+                      return TerminalMessage(item: item);
+                    },
                   ),
-                  onSubmitted: (_) => onSend(),
-                ),
-              ),
-              const SizedBox(width: 12),
-              FilledButton.icon(
-                onPressed: onSend,
-                icon: const Icon(Icons.send),
-                label: const Text('Send'),
-              ),
-            ],
           ),
-        ),
-      ],
+          TerminalPrompt(
+            session: session,
+            controller: sendController,
+            onSend: onSend,
+          ),
+        ],
+      ),
     );
   }
 }
@@ -110,33 +113,71 @@ class ControlBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: _terminalPanel,
+        border: Border(bottom: BorderSide(color: _terminalBorder)),
+      ),
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 6),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _TerminalAction(
+              label: 'abort',
+              color: _terminalRed,
+              onTap: onAbort,
+            ),
+            _TerminalAction(label: 'compact', onTap: onCompact),
+            _TerminalAction(
+              label: 'model',
+              onTap: canSelectModel ? onModel : null,
+            ),
+            _TerminalAction(
+              label: 'shutdown',
+              color: _terminalOrange,
+              onTap: onShutdown,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TerminalAction extends StatelessWidget {
+  const _TerminalAction({
+    required this.label,
+    required this.onTap,
+    this.color = _terminalBlue,
+  });
+
+  final String label;
+  final VoidCallback? onTap;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          OutlinedButton.icon(
-            onPressed: onAbort,
-            icon: const Icon(Icons.stop),
-            label: const Text('Abort'),
+      padding: const EdgeInsets.only(right: 8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(4),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            border: Border.all(color: onTap == null ? _terminalBorder : color),
+            borderRadius: BorderRadius.circular(4),
           ),
-          OutlinedButton.icon(
-            onPressed: onCompact,
-            icon: const Icon(Icons.compress),
-            label: const Text('Compact'),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: onTap == null ? _terminalMuted : color,
+              fontFamily: 'monospace',
+              fontSize: 12,
+            ),
           ),
-          OutlinedButton.icon(
-            onPressed: canSelectModel ? onModel : null,
-            icon: const Icon(Icons.memory),
-            label: const Text('Model'),
-          ),
-          OutlinedButton.icon(
-            onPressed: onShutdown,
-            icon: const Icon(Icons.power_settings_new),
-            label: const Text('Shutdown'),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -150,35 +191,112 @@ class SessionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final usage = session.contextUsage;
-    return Padding(
-      padding: const EdgeInsets.all(16),
+    final meta = [
+      session.model,
+      'pid ${session.pid}',
+      if (usage != null) usage.label,
+    ].join('  •  ');
+    return Container(
+      decoration: const BoxDecoration(
+        color: _terminalPanel,
+        border: Border(bottom: BorderSide(color: _terminalBorder)),
+      ),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 7),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
+              const Text(
+                'pi ',
+                style: TextStyle(
+                  color: _terminalGreen,
+                  fontFamily: 'monospace',
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
               Expanded(
                 child: Text(
                   session.displayName,
-                  style: Theme.of(context).textTheme.titleLarge,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _terminalText,
+                    fontFamily: 'monospace',
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
                 ),
               ),
-              Chip(label: Text(session.status)),
+              Text(
+                session.status,
+                style: const TextStyle(
+                  color: _terminalGreen,
+                  fontFamily: 'monospace',
+                  fontSize: 12,
+                ),
+              ),
             ],
           ),
-          const SizedBox(height: 6),
-          Text(session.cwd, style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              Chip(label: Text(session.model)),
-              Chip(label: Text('PID ${session.pid}')),
-              if (usage != null) Chip(label: Text(usage.label)),
-            ],
+          const SizedBox(height: 3),
+          Text(
+            session.cwd,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: _terminalMuted,
+              fontFamily: 'monospace',
+              fontSize: 11,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            meta,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: _terminalMuted,
+              fontFamily: 'monospace',
+              fontSize: 11,
+            ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class TerminalSection extends StatelessWidget {
+  const TerminalSection({
+    super.key,
+    required this.title,
+    required this.count,
+    required this.child,
+  });
+
+  final String title;
+  final int count;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        dense: true,
+        collapsedBackgroundColor: _terminalPanel,
+        backgroundColor: _terminalPanel,
+        collapsedIconColor: _terminalMuted,
+        iconColor: _terminalBlue,
+        initiallyExpanded: false,
+        title: Text(
+          '$title ($count)',
+          style: const TextStyle(
+            color: _terminalMuted,
+            fontFamily: 'monospace',
+            fontSize: 12,
+          ),
+        ),
+        children: [child],
       ),
     );
   }
@@ -191,64 +309,259 @@ class ToolStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      color: Colors.black.withValues(alpha: 0.18),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: tools
-            .map((tool) => Chip(label: Text('${tool.name} · ${tool.status}')))
-            .toList(),
+    return TerminalSection(
+      title: 'tools',
+      count: tools.length,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: const BoxDecoration(
+          color: _terminalBg,
+          border: Border(top: BorderSide(color: _terminalBorder)),
+        ),
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: tools
+              .map(
+                (tool) => Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: _terminalBorder),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    '${tool.name} · ${tool.status}',
+                    style: const TextStyle(
+                      color: _terminalOrange,
+                      fontFamily: 'monospace',
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              )
+              .toList(),
+        ),
       ),
     );
   }
 }
 
-class MessageCard extends StatelessWidget {
-  const MessageCard({super.key, required this.item});
+class TerminalMessage extends StatelessWidget {
+  const TerminalMessage({super.key, required this.item});
 
   final HubItem item;
 
   @override
   Widget build(BuildContext context) {
-    final color = switch (item.kind) {
-      'user' => Colors.blueAccent,
-      'assistant' => Colors.purpleAccent,
+    final accent = switch (item.kind) {
+      'user' => _terminalBlue,
+      'assistant' => _terminalPurple,
       'tool' =>
-        item.metadata['isError'] == true
-            ? Colors.redAccent
-            : Colors.orangeAccent,
-      'custom' => Colors.tealAccent,
-      'bash' => Colors.greenAccent,
-      _ => Colors.grey,
+        item.metadata['isError'] == true ? _terminalRed : _terminalOrange,
+      'custom' => _terminalGreen,
+      'bash' => _terminalGreen,
+      _ => _terminalMuted,
     };
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.circle, size: 10, color: color),
-                const SizedBox(width: 8),
-                Text(item.role, style: Theme.of(context).textTheme.labelLarge),
-                const Spacer(),
-                Text(
-                  timeLabel(item.timestamp),
-                  style: Theme.of(context).textTheme.labelSmall,
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            SelectableText(
-              item.text.isEmpty ? '(empty)' : item.text,
-              style: const TextStyle(fontFamily: 'monospace', height: 1.35),
-            ),
-          ],
+    final label = switch (item.kind) {
+      'user' => 'user',
+      'assistant' => 'assistant',
+      'tool' => 'tool',
+      'bash' => 'bash',
+      _ => item.role,
+    };
+    final text = item.text.isEmpty ? '(empty)' : item.text;
+    final isToolLike = item.kind == 'tool' || item.kind == 'bash';
+
+    if (isToolLike) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 6),
+        decoration: BoxDecoration(
+          color: _terminalPanel,
+          border: Border.all(color: _terminalBorder),
+          borderRadius: BorderRadius.circular(4),
         ),
+        child: Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            dense: true,
+            tilePadding: const EdgeInsets.symmetric(horizontal: 10),
+            childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+            initiallyExpanded: false,
+            title: _MessageHeader(
+              label: label,
+              timestamp: item.timestamp,
+              accent: accent,
+            ),
+            children: [_TerminalText(text: text, muted: true)],
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: _terminalPanel,
+        border: Border(left: BorderSide(color: accent, width: 3)),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _MessageHeader(
+            label: label,
+            timestamp: item.timestamp,
+            accent: accent,
+          ),
+          const SizedBox(height: 8),
+          _TerminalText(text: text),
+        ],
+      ),
+    );
+  }
+}
+
+class _MessageHeader extends StatelessWidget {
+  const _MessageHeader({
+    required this.label,
+    required this.timestamp,
+    required this.accent,
+  });
+
+  final String label;
+  final int timestamp;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Text(
+          '▌ $label',
+          style: TextStyle(
+            color: accent,
+            fontFamily: 'monospace',
+            fontWeight: FontWeight.w700,
+            fontSize: 12,
+          ),
+        ),
+        const Spacer(),
+        Text(
+          timeLabel(timestamp),
+          style: const TextStyle(
+            color: _terminalMuted,
+            fontFamily: 'monospace',
+            fontSize: 11,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TerminalText extends StatelessWidget {
+  const _TerminalText({required this.text, this.muted = false});
+
+  final String text;
+  final bool muted;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: SelectableText(
+        text,
+        style: TextStyle(
+          color: muted ? _terminalMuted : _terminalText,
+          fontFamily: 'monospace',
+          fontSize: 12.5,
+          height: 1.35,
+        ),
+      ),
+    );
+  }
+}
+
+class TerminalPrompt extends StatelessWidget {
+  const TerminalPrompt({
+    super.key,
+    required this.session,
+    required this.controller,
+    required this.onSend,
+  });
+
+  final HubSession session;
+  final TextEditingController controller;
+  final VoidCallback onSend;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: _terminalPanel,
+        border: Border(top: BorderSide(color: _terminalBorder)),
+      ),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(bottom: 12),
+            child: Text(
+              '›',
+              style: TextStyle(
+                color: _terminalGreen,
+                fontFamily: 'monospace',
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              minLines: 1,
+              maxLines: 5,
+              style: const TextStyle(
+                color: _terminalText,
+                fontFamily: 'monospace',
+                fontSize: 13,
+              ),
+              decoration: InputDecoration(
+                hintText: 'message ${session.displayName}',
+                hintStyle: const TextStyle(color: _terminalMuted),
+                filled: true,
+                fillColor: _terminalBg,
+                isDense: true,
+                border: OutlineInputBorder(
+                  borderSide: const BorderSide(color: _terminalBorder),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: const BorderSide(color: _terminalBorder),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderSide: const BorderSide(color: _terminalBlue),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+              onSubmitted: (_) => onSend(),
+            ),
+          ),
+          const SizedBox(width: 8),
+          IconButton.filled(
+            onPressed: onSend,
+            icon: const Icon(Icons.send),
+            tooltip: 'Send',
+          ),
+        ],
       ),
     );
   }
