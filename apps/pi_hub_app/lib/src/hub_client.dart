@@ -64,6 +64,35 @@ class AgentCreateResult {
   }
 }
 
+class CollaborationSendResult {
+  CollaborationSendResult({
+    required this.id,
+    required this.targetCount,
+    required this.commandIds,
+  });
+
+  final String id;
+  final int targetCount;
+  final List<String> commandIds;
+
+  factory CollaborationSendResult.fromJson(Map<String, dynamic> json) {
+    final message = json['collaborationMessage'] is Map
+        ? _stringKeyMap(json['collaborationMessage'] as Map)
+        : <String, dynamic>{};
+    final commands = json['commands'] is List
+        ? json['commands'] as List
+        : const [];
+    return CollaborationSendResult(
+      id: message['id']?.toString() ?? '',
+      targetCount: commands.length,
+      commandIds: [
+        for (final command in commands)
+          if (command is Map && command['id'] != null) command['id'].toString(),
+      ],
+    );
+  }
+}
+
 class HubClient {
   String baseUrl = 'http://10.0.2.2:17878';
   String token = '';
@@ -264,6 +293,17 @@ class HubClient {
     } finally {
       client.close(force: true);
     }
+  }
+
+  Future<CollaborationSendResult> sendCollaborationMessage({
+    required List<String> sessionIds,
+    required String text,
+  }) async {
+    final data = await _postJson('/api/v2/collaboration/messages', {
+      'sessionIds': sessionIds,
+      'text': text,
+    });
+    return CollaborationSendResult.fromJson(data);
   }
 
   Future<void> sendControl(

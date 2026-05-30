@@ -200,7 +200,7 @@ Each task uses:
   - Evidence: `node --check`; `flutter analyze`; provider-disabled path works; manual provider smoke documented if credentials available.
   - Review estimate: ~390 changed lines, 90 min.
 
-- [ ] T22 — Add collaboration routing backend/extension handling
+- [x] T22 — Add collaboration routing backend/extension handling
   - Files:
     - `pi-hub-server.mjs`
     - `pi-hub.ts`
@@ -208,7 +208,7 @@ Each task uses:
   - Evidence: Smoke sends message to two sessions, both poll commands, inbox shows collaboration item.
   - Review estimate: ~350 changed lines, 65 min.
 
-- [ ] T23 — Add collaboration mobile UI
+- [x] T23 — Add collaboration mobile UI
   - Files:
     - `apps/pi_hub_app/lib/src/collaboration_screen.dart`
     - `apps/pi_hub_app/lib/src/mission_control_screen.dart`

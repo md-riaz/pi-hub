@@ -189,6 +189,7 @@ function serverCapabilities() {
     approvals: true,
     diffReviews: true,
     agentCreation: config.agentCreation.enabled,
+    collaboration: true,
     pushDevices: false,
   };
 }
@@ -677,6 +678,117 @@ function createApprovalInboxItem(approval) {
     actionRef: { kind: "approval", id: approval.id },
     dedupeKey: `${approval.sessionId || "global"}:approval:${approval.id}`,
   });
+}
+
+function targetSessionIds(body = {}) {
+  const source = Array.isArray(body.sessionIds)
+    ? body.sessionIds
+    : Array.isArray(body.targetSessionIds)
+      ? body.targetSessionIds
+      : Array.isArray(body.targets)
+        ? body.targets
+        : body.sessionId
+          ? [body.sessionId]
+          : [];
+  const ids = source.map(id => String(id || "").trim()).filter(Boolean);
+  const unique = Array.from(new Set(ids));
+  if (body.all === true) return Array.from(sessions.keys());
+  return unique;
+}
+
+function collaborationMessageText(body = {}) {
+  const text = String(body.text ?? body.message ?? body.body ?? "").trim();
+  if (!text) throw new Error("message text required");
+  return capString(text, 8000);
+}
+
+function collaborationTitle(text) {
+  const firstLine = text.split(/\r?\n/).find(line => line.trim()) || text;
+  return capString(firstLine, 120);
+}
+
+function collaborationHistoryItem(message, targetSessionId) {
+  return sanitizeItem({
+    id: `collab-${message.id}-${targetSessionId}`,
+    kind: "custom",
+    role: "collaboration",
+    timestamp: message.createdAt,
+    text: message.text,
+    metadata: {
+      collaborationId: message.id,
+      origin: message.origin,
+      targetSessionIds: message.targetSessionIds,
+      deliveredTo: targetSessionId,
+    },
+  });
+}
+
+function createCollaborationInboxItem(message, sessionId) {
+  return upsertInboxItem({
+    sessionId,
+    type: "collaboration",
+    severity: message.severity,
+    title: message.title,
+    body: message.text,
+    actionRef: { kind: "collaboration", id: message.id },
+    dedupeKey: `${sessionId}:collaboration:${message.id}`,
+  });
+}
+
+function routeCollaborationMessage(body = {}) {
+  const text = collaborationMessageText(body);
+  const sessionIds = targetSessionIds(body);
+  if (!sessionIds.length) throw new Error("target sessionIds required");
+  const missing = sessionIds.filter(id => !sessions.has(id));
+  if (missing.length) throw new Error(`session not found: ${missing.join(", ")}`);
+  const now = Date.now();
+  const message = {
+    id: `collab_${crypto.randomUUID()}`,
+    text,
+    title: String(body.title || `Collaboration: ${collaborationTitle(text)}`),
+    severity: String(body.severity || "info"),
+    origin: body.origin && typeof body.origin === "object" ? body.origin : { kind: "operator", id: "mobile" },
+    targetSessionIds: sessionIds,
+    createdAt: now,
+  };
+  const commandsCreated = [];
+  const inboxCreated = [];
+  for (const sessionId of sessionIds) {
+    const session = getOrCreateSession(sessionId);
+    const historyItem = collaborationHistoryItem(message, sessionId);
+    const idx = session.history.findIndex(existing => existing.id === historyItem.id);
+    if (idx >= 0) session.history[idx] = historyItem;
+    else session.history.push(historyItem);
+    session.history = session.history.slice(-Number(config.historyLimit));
+    const inboxItem = createCollaborationInboxItem(message, sessionId);
+    inboxCreated.push(inboxItem);
+    const command = createCommand(sessionId, "collaboration_message", {
+      collaborationId: message.id,
+      text: message.text,
+      title: message.title,
+      origin: message.origin,
+      targetSessionIds: sessionIds,
+    });
+    commandsCreated.push(command);
+    session.lastEvent = normalizeEvent({
+      type: "collaboration_message",
+      collaborationId: message.id,
+      item: historyItem,
+      text: message.text,
+      title: message.title,
+      origin: message.origin,
+      targetSessionIds: sessionIds,
+    }, sessionId, "collaboration_message");
+    broadcast({ type: "session_updated", reason: "collaboration", session: publicSession(session), event: session.lastEvent });
+  }
+  recordAudit("collaboration.message", `Collaboration message routed to ${sessionIds.length} session${sessionIds.length === 1 ? "" : "s"}`, { collaborationId: message.id, targetSessionIds: sessionIds });
+  broadcast({
+    type: "collaboration.message.created",
+    collaborationMessage: message,
+    commands: commandsCreated.map(publicCommand),
+    inboxItems: inboxCreated.map(publicInboxItem),
+  });
+  return { message, commands: commandsCreated, inboxItems: inboxCreated };
 }
 
 function normalizeApprovalRecord(event) {
@@ -1580,6 +1692,17 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === "POST" && url.pathname === "/api/v2/collaboration/messages") {
+      const body = await readBody(req);
+      const result = routeCollaborationMessage(body);
+      sendJson(res, 200, {
+        ok: true,
+        collaborationMessage: result.message,
+        commands: result.commands.map(publicCommand),
+        inboxItems: result.inboxItems.map(publicInboxItem),
+      });
+      return;
+    }
 
     if (req.method === "POST" && url.pathname === "/api/send") {
       const body = await readBody(req);

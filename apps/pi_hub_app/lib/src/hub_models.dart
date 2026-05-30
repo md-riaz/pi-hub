@@ -152,6 +152,7 @@ class HubServerCapabilities {
     required this.approvals,
     required this.diffReviews,
     required this.agentCreation,
+    required this.collaboration,
     required this.pushDevices,
   });
 
@@ -162,6 +163,7 @@ class HubServerCapabilities {
   final bool approvals;
   final bool diffReviews;
   final bool agentCreation;
+  final bool collaboration;
   final bool pushDevices;
 
   factory HubServerCapabilities.empty() => HubServerCapabilities(
@@ -172,6 +174,7 @@ class HubServerCapabilities {
     approvals: false,
     diffReviews: false,
     agentCreation: false,
+    collaboration: false,
     pushDevices: false,
   );
 
@@ -184,6 +187,7 @@ class HubServerCapabilities {
       approvals: _asBool(json['approvals']),
       diffReviews: _asBool(json['diffReviews']),
       agentCreation: _asBool(json['agentCreation']),
+      collaboration: _asBool(json['collaboration']),
       pushDevices: _asBool(json['pushDevices']),
     );
   }
