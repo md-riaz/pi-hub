@@ -25,3 +25,7 @@
 - Agent creation smoke tested: disabled path returns `403`; out-of-root enabled path returns `400`; enabled temp allowlist with Node harmless command in `testMode` returns success and audit entry.
 - Flutter `flutter analyze` passes.
 - Flutter `flutter test` passes.
+
+## 2026-05-30
+
+- Added AI-friendly onboarding docs (`AGENTS.md`, `docs/ai-context.md`) so future agents can quickly understand architecture, product decisions, current behavior, gotchas, release flow, and paused attachment work.

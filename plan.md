@@ -30,6 +30,11 @@ Flutter Android app
   └─ queues prompt/control commands to selected session
 ```
 
+## AI Onboarding
+
+- Future AI agents should start with `AGENTS.md` and `docs/ai-context.md` before editing.
+- Attachment sending from app is paused; design notes live in those docs.
+
 ## Phases
 
 1. MVP bridge and app

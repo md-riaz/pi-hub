@@ -313,6 +313,14 @@ flutter analyze
 flutter test
 ```
 
+### AI agent onboarding
+
+Future AI agents should read these first:
+
+- [`AGENTS.md`](AGENTS.md) — project map, decisions, workflows, gotchas.
+- [`docs/ai-context.md`](docs/ai-context.md) — compact context reference and task entry points.
+- [`plan.md`](plan.md), [`progress.md`](progress.md), [`TODO.md`](TODO.md) — direction, status, and checklist.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

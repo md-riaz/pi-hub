@@ -18,3 +18,4 @@
 - [ ] Add `/hub rotate-token` or setup UI for token rotation.
 - [ ] Add stronger auth/HTTPS before any public internet exposure.
 - [ ] Add optional cloud relay mode later.
+- [ ] Add app image/text-file attachments (paused; see `AGENTS.md` and `docs/ai-context.md`).
