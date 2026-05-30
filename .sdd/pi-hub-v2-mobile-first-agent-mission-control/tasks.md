@@ -53,7 +53,7 @@ Each task uses:
   - Evidence: `cd apps/pi_hub_app && flutter analyze && flutter test`.
   - Review estimate: ~360 changed lines, 45 min.
 
-- [ ] T06 — Add v2 Dart models and fixture parser tests
+- [x] T06 — Add v2 Dart models and fixture parser tests
   - Files:
     - `apps/pi_hub_app/lib/src/hub_models.dart`
     - `apps/pi_hub_app/test/hub_models_test.dart`
@@ -62,7 +62,7 @@ Each task uses:
   - Evidence: `flutter test test/hub_models_test.dart`; fixture with 20 sessions parses.
   - Review estimate: ~340 changed lines, 45 min.
 
-- [ ] T07 — Add mission-control mobile shell
+- [x] T07 — Add mission-control mobile shell
   - Files:
     - `apps/pi_hub_app/lib/main.dart`
     - `apps/pi_hub_app/lib/src/mission_control_screen.dart`
