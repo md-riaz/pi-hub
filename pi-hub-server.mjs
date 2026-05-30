@@ -488,8 +488,39 @@ function recordAudit(type, summary, details = {}, actor = { kind: "server", id: 
   return event;
 }
 
+function removeSessionState(sessionId, reason = "removed") {
+  const session = sessions.get(sessionId);
+  const publicBefore = session ? publicSession(session) : undefined;
+  sessions.delete(sessionId);
+  commandQueues.delete(sessionId);
+  for (const [id, command] of Array.from(commands.entries())) {
+    if (command.sessionId === sessionId) commands.delete(id);
+  }
+  for (const [id, item] of Array.from(inboxItems.entries())) {
+    if (item.sessionId === sessionId) inboxItems.delete(id);
+  }
+  for (const [key, id] of Array.from(inboxDedupe.entries())) {
+    if (!inboxItems.has(id)) inboxDedupe.delete(key);
+  }
+  broadcast({ type: "session_removed", reason, sessionId, session: publicBefore });
+  return publicBefore;
+}
+
+function pruneStaleSessions() {
+  const threshold = Number(config.staleThresholdMs);
+  if (!Number.isFinite(threshold) || threshold <= 0) return;
+  const now = Date.now();
+  for (const session of Array.from(sessions.values())) {
+    const lastSeen = Number(session.lastSeen || 0);
+    if (lastSeen && now - lastSeen > threshold) {
+      removeSessionState(session.id, "stale");
+    }
+  }
+}
+
 function snapshot() {
   expireCommands();
+  pruneStaleSessions();
   refreshAttentionInboxItems();
   return {
     server: {
@@ -1107,6 +1138,7 @@ function createHealthInboxForSession(session) {
 }
 
 function refreshAttentionInboxItems() {
+  pruneStaleSessions();
   for (const session of sessions.values()) createHealthInboxForSession(session);
 }
 
@@ -1820,11 +1852,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/unregister") {
       const body = await readBody(req);
       const sessionId = requireSessionId(body);
-      const session = sessions.get(sessionId);
-      const publicBefore = session ? publicSession(session) : undefined;
-      sessions.delete(sessionId);
-      commandQueues.delete(sessionId);
-      broadcast({ type: "session_removed", reason: "unregister", sessionId, session: publicBefore });
+      removeSessionState(sessionId, "unregister");
       sendJson(res, 200, { ok: true });
       return;
     }
