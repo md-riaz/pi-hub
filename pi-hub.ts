@@ -32,6 +32,14 @@ interface HubItem {
 	metadata?: Record<string, unknown>;
 }
 
+interface PendingMobileInput {
+	commandId: string;
+	text: string;
+	createdAt: number;
+	hasAttachments: boolean;
+	attachmentMode?: string;
+}
+
 const HUB_PROTOCOL_VERSION = 2;
 const HUB_CLIENT_VERSION = "0.1.0";
 const HUB_CLIENT_NAME = "pi-hub-extension";
@@ -216,6 +224,16 @@ function safeJson(value: unknown): string {
 	} catch {
 		return String(value);
 	}
+}
+
+function normalizeEchoText(text: string): string {
+	return text
+		.replace(/\[Image:[^\]]+\]/gi, "")
+		.replace(/\[image\]/gi, "")
+		.replace(/\[Image attachment:[^\]]+\]\s*[^\n]*/gi, "")
+		.replace(/\s+/g, " ")
+		.trim()
+		.toLowerCase();
 }
 
 function contentToText(content: unknown): string {
@@ -454,7 +472,41 @@ export default function piHubExtension(pi: ExtensionAPI) {
 	let presenceTimer: ReturnType<typeof setInterval> | null = null;
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
 	const toolNames = new Map<string, string>();
+	const pendingMobileInputs: PendingMobileInput[] = [];
 	let serverOk = false;
+
+	function rememberMobileInput(command: any): PendingMobileInput {
+		const pending = {
+			commandId: String(command.id),
+			text: String(command.text || ""),
+			createdAt: Date.now(),
+			hasAttachments: Array.isArray(command.attachments) && command.attachments.some((part: any) => part?.type === "image"),
+			attachmentMode: typeof command.attachmentMode === "string" ? command.attachmentMode : undefined,
+		};
+		pendingMobileInputs.push(pending);
+		while (pendingMobileInputs.length > 25) pendingMobileInputs.shift();
+		return pending;
+	}
+
+	function mobileEchoMetadata(text: string): Record<string, unknown> | undefined {
+		const cutoff = Date.now() - 120_000;
+		for (let i = pendingMobileInputs.length - 1; i >= 0; i--) {
+			const pending = pendingMobileInputs[i];
+			if (pending.createdAt < cutoff) {
+				pendingMobileInputs.splice(i, 1);
+				continue;
+			}
+			if (normalizeEchoText(text) !== normalizeEchoText(pending.text)) continue;
+			return {
+				source: "mobile",
+				commandId: pending.commandId,
+				commandType: "user_message",
+				hasAttachments: pending.hasAttachments,
+				attachmentMode: pending.attachmentMode,
+			};
+		}
+		return undefined;
+	}
 
 	function liveCtx(): ExtensionContext | null {
 		if (!ctxRef || !sessionId) return null;
@@ -676,6 +728,7 @@ async function handleCollaborationMessage(command: any): Promise<void> {
 
 					if (command?.type === "user_message") {
 						if (typeof command.text !== "string" || !command.text.trim()) throw new Error("text required");
+						rememberMobileInput(command);
 						const content = Array.isArray(command.attachments) && command.attachments.length > 0
 							? command.attachments
 							: command.text;
@@ -778,17 +831,19 @@ async function handleCollaborationMessage(command: any): Promise<void> {
 	});
 
 	pi.on("input", (event) => {
+		const echoMetadata = mobileEchoMetadata(event.text);
 		void sendEvent({
 			type: "input",
 			item: {
-				id: `input-${Date.now()}`,
+				id: echoMetadata?.commandId ? `input-${echoMetadata.commandId}` : `input-${Date.now()}`,
 				kind: "user",
 				role: "user",
 				timestamp: Date.now(),
 				text: event.text,
-				metadata: { source: event.source },
+				metadata: echoMetadata || { source: event.source },
 			},
-			source: event.source,
+			source: echoMetadata ? "mobile" : event.source,
+			commandId: echoMetadata?.commandId,
 		});
 	});
 
@@ -811,6 +866,13 @@ async function handleCollaborationMessage(command: any): Promise<void> {
 
 	pi.on("message_end", (event) => {
 		const item = messageToItem((event as any).message);
+		if (item?.kind === "user") {
+			const echoMetadata = mobileEchoMetadata(item.text);
+			if (echoMetadata) {
+				item.id = `user-${echoMetadata.commandId}`;
+				item.metadata = { ...(item.metadata || {}), ...echoMetadata };
+			}
+		}
 		if (item) void sendEvent({ type: "message_end", item });
 	});
 

@@ -1493,7 +1493,8 @@ const server = http.createServer(async (req, res) => {
       fs.mkdirSync(attachmentDir, { recursive: true });
       const savedAttachments = [];
       const content = [];
-      if (text) content.push({ type: "text", text });
+      const textParts = [];
+      if (text) textParts.push(text);
       for (const att of attachments) {
         const originalName = path.basename(String(att.name || "attachment"));
         const safeName = originalName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120) || "attachment";
@@ -1510,20 +1511,24 @@ const server = http.createServer(async (req, res) => {
         fs.writeFileSync(filePath, bytes);
         const saved = { name: originalName, mimeType, path: filePath, size: bytes.length };
         savedAttachments.push(saved);
+
         if (isImage && modelSupportsImages) {
+          textParts.push(`See attached image: ${originalName}`);
           content.push({ type: "image", data, mimeType });
         } else if (isImage) {
-          content.push({ type: "text", text: `[Attachment: ${originalName}] ${filePath}` });
-        } else if (mimeType.startsWith("text/") || ["application/json", "application/xml"].includes(mimeType)) {
-          content.push({ type: "text", text: `[File: ${originalName}]\n${bytes.toString("utf-8")}` });
+          textParts.push(`See attached image: ${originalName}`);
+          textParts.push(`[Image attachment: ${originalName}] ${filePath}`);
         } else {
-          content.push({ type: "text", text: `[Attachment: ${originalName}] ${filePath}` });
+          textParts.push(`See attached file: ${originalName}`);
+          textParts.push(`[Attachment: ${originalName}] ${filePath}`);
+        }
+
+        if (!isImage && (mimeType.startsWith("text/") || ["application/json", "application/xml"].includes(mimeType))) {
+          textParts.push(`[File contents: ${originalName}]\n${bytes.toString("utf-8")}`);
         }
       }
-      const messageText = content
-        .map(part => part.type === "text" ? part.text : `[Image: ${savedAttachments.find(att => att.mimeType === part.mimeType)?.name || "image"}]`)
-        .filter(Boolean)
-        .join("\n\n");
+      const messageText = textParts.filter(Boolean).join("\n\n");
+      if (messageText) content.unshift({ type: "text", text: messageText });
       const commandType = messageText.trim().startsWith("/") ? "slash_command" : "user_message";
       const command = createCommand(sessionId, commandType, {
         text: messageText,
