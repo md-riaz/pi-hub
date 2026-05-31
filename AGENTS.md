@@ -49,9 +49,6 @@ Not implemented / paused:
 ### Root
 
 - `README.md` — user-facing setup/use/troubleshooting.
-- `plan.md` — architecture decisions and phased plan.
-- `progress.md` — implementation status and validation history.
-- `TODO.md` — current task checklist.
 - `docs/pi-hub-v2-protocol.md` — API/protocol notes.
 - `.sdd/pi-hub-v2-mobile-first-agent-mission-control/` — original design/spec/proposal artifacts.
 
