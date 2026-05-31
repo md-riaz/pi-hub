@@ -1,5 +1,7 @@
 # Pi Hub
 
+**Version: 2.0.1+1**
+
 Pi Hub is a local-first mission-control dashboard for Pi Coding Agent sessions. It combines a Pi extension, a small HTTP/SSE hub server, and a Flutter Android app so you can monitor and control multiple running agents from a phone over any network that can reach the hub host.
 
 > Status: early but usable. The hub is designed for private networks and should not be exposed directly to the public internet.
@@ -9,7 +11,10 @@ Pi Hub is a local-first mission-control dashboard for Pi Coding Agent sessions. 
 - Live overview of connected Pi sessions, health, model, context usage, active tools, and recent transcript entries.
 - Mobile prompt sending and controls for abort, compact, model switch, and shutdown.
 - Command lifecycle visibility beyond simple queued snackbars.
-- Inbox-style attention feed for failures, stale/offline agents, approvals, diff reviews, and other action items.
+- Chat-style session detail with user bubbles, assistant bubbles (streaming cursor), tool groups, terminal cards, edit cards, waiting cards.
+- Real file attachments: pick files, pick images, paste from clipboard.
+- Server browse endpoint for remote directory listing.
+- Model sheet with scrollable list.
 - Optional provider-neutral push registration with an `ntfy` implementation, disabled by default.
 - Optional guarded agent creation endpoint for allowlisted workspace roots, disabled by default.
 - Memory-only hub state by default: no transcript database and no cloud dependency.
@@ -27,14 +32,14 @@ Hub host
   └─ pi-hub-server.mjs
       ├─ token-protected HTTP JSON API
       ├─ SSE live stream for the mobile app
-      ├─ in-memory sessions, inbox, commands, push devices, and audit ring
+      ├─ in-memory sessions, commands, push devices, and audit ring
       └─ optional guarded process creation for trusted workspaces
 
 Android device
   └─ apps/pi_hub_app
-      ├─ Flutter mission-control UI
-      ├─ live session/detail/inbox screens
-      └─ prompt, control, approval, diff-review, push, and create-agent flows
+      ├─ Connection screen → Session list → Session detail (chat-style)
+      ├─ Composer with attachment/slash/model buttons
+      └─ Bottom sheets: model, slash, attachment, session menu, new session, broadcast, diff drawer
 ```
 
 ## Requirements
@@ -140,9 +145,9 @@ Run `/hub info` to see detected LAN IPs. The server binds `0.0.0.0` by default s
 1. Start or restart your Pi sessions.
 2. Open the Android app.
 3. Enter the hub URL and token, then tap **Connect**.
-4. Select a session or attention item.
-5. Review transcript, tools, health, inbox, approvals, or diff reviews.
-6. Send prompts or run controls such as **Abort**, **Compact**, **Model**, and **Shutdown**.
+4. Select a session.
+5. Review chat history, tools, and health in a terminal-style view.
+6. Use composer to send messages, attach files, or run slash commands.
 
 Commands are queued on the hub and picked up by Pi sessions during polling. The default polling interval is `1500ms`.
 
@@ -165,11 +170,10 @@ Example:
   "historyLimit": 500,
   "autoStartServer": true,
   "pollIntervalMs": 1500,
-  "pushDeviceLimit": 100,
   "push": {
     "enabled": false,
     "provider": "ntfy",
-    "defaultScopes": ["critical", "approval", "diff_review", "command_failure", "stale", "offline"],
+    "defaultScopes": ["critical", "command_failure", "stale", "offline"],
     "ntfy": {
       "serverUrl": "https://ntfy.sh",
       "topic": "",
@@ -285,6 +289,8 @@ All API routes except `/` require either `Authorization: Bearer <token>` or `?to
 - `GET /api/v2/push/devices` — list public push device records and provider status.
 - `POST /api/v2/push/devices` — register/update/disable a push device.
 - `POST /api/v2/agents/create` — guarded agent creation for allowlisted workspace roots.
+- `GET /api/v2/browse` — list remote directories.
+- `POST /api/v2/send-attachment` — send files as attachments.
 
 See [`docs/pi-hub-v2-protocol.md`](docs/pi-hub-v2-protocol.md) for protocol notes.
 

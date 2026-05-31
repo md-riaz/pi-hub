@@ -28,6 +28,7 @@ class MissionControlScreen extends StatefulWidget {
   final VoidCallback? onNewSession;
   final VoidCallback? onBroadcast;
   final VoidCallback? onDisconnect;
+  final VoidCallback? onLogout;
   final HubClient client;
   final List<Map<String, String>> recentConnections;
   final ValueChanged<Map<String, String>>? onRecentConnection;
@@ -56,6 +57,7 @@ class MissionControlScreen extends StatefulWidget {
     this.onNewSession,
     this.onBroadcast,
     this.onDisconnect,
+    this.onLogout,
     required this.client,
     this.recentConnections = const [],
     this.onRecentConnection,
@@ -99,6 +101,7 @@ class _MissionControlScreenState extends State<MissionControlScreen> {
           onModelChanged: widget.onModelChanged,
           onPause: widget.onPause,
           onStop: widget.onStop,
+          onLogout: widget.onLogout,
         );
       }
     }
@@ -111,6 +114,7 @@ class _MissionControlScreenState extends State<MissionControlScreen> {
       onNewSession: widget.onNewSession,
       onBroadcast: widget.onBroadcast,
       onDisconnect: widget.onDisconnect,
+      onLogout: widget.onLogout,
     );
   }
 }

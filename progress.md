@@ -1,5 +1,50 @@
 # Progress
 
+### 2026-05-31 — Dedicated Flutter logout
+
+- Added dedicated Flutter logout controls on session list and session detail screens.
+- Logout leaves the active hub and returns to connection screen while keeping recent hub URLs/tokens saved for quick hub switching.
+- Kept disconnect as separate quick action for dropping the current live connection.
+
+### 2026-05-31 — v2.0.1: UX overhaul + cleanup
+
+**Flutter app completely redesigned:**
+- Chat-style session detail with user/assistant bubbles, streaming cursor
+- Tool group cards, terminal cards, edit cards, waiting cards
+- Full-screen connection with persisted recent connections
+- Session list with search bar and state filter chips
+- Composer with attachment, slash commands, model switch buttons
+- 7 bottom sheets: model, slash, attachment, session menu, new session, broadcast, diff drawer
+- Remote path browser for new session creation
+- Status dots with glowing effect
+
+**Real file attachments:**
+- Pick files from device storage
+- Pick images from gallery
+- Paste from clipboard
+- Server browse endpoint (`GET /api/v2/browse`)
+- File upload via base64 (`POST /api/v2/send-attachment`)
+
+**Server/extension cleanup (-697 lines):**
+- Removed inbox, approval, diff review systems from server
+- Removed approval response handling from extension
+- Server: 2131 → 1475 lines
+- Extension: 806 → 767 lines
+
+**Bug fixes:**
+- Connect button rebuilds on text input
+- Recent connections loaded from SharedPreferences
+- Model lists from server (not hardcoded)
+- Session chips show display name, model, cwd
+- Auto-scroll only when near bottom
+- SafeArea wrapping
+- Model sheet scrollable
+- Back button returns to session list
+- OS-specific firewall commands
+- Human-readable error messages
+
+**Version:** 2.0.1+1
+
 ## 2026-05-29
 
 - Added Pi Hub extension (`pi-hub.ts`) that auto-starts central server, registers each Pi session, streams session history/current work, and polls for commands.

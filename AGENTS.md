@@ -31,16 +31,18 @@ Implemented:
 - Hub server memory-only state, token auth, HTTP JSON API, SSE stream.
 - Android app with connection persistence + auto-connect.
 - Mobile controls: prompt, abort, compact, model switch, shutdown.
-- Inbox/approvals/diff review/collaboration/push-device registration/agent creation surfaces.
+- File attachment sending (pick files, images, clipboard paste).
+- Server browse endpoint for remote directory listing.
+- Chat-style session detail with tool groups, terminal cards, edit cards, waiting cards.
+- Agent creation surfaces.
 - Stale session pruning from hub memory.
 - Terminal-style agent detail inner screen.
 - Release APKs published via GitHub releases.
 
 Not implemented / paused:
 
-- App file/image attachment sending. Investigation found Pi supports `pi.sendUserMessage(content: string | (TextContent | ImageContent)[])`, but app/server/extension attachment pipeline is not implemented yet.
-- Public-internet hardening (HTTPS, stronger auth, rate limits, token rotation) is not implemented.
-- Cloud/reverse relay is not implemented.
+- HTTPS/stronger auth before public internet exposure.
+- Optional cloud relay mode.
 
 ## Key Files
 
@@ -76,17 +78,16 @@ Important command behavior:
 - `pi-hub-server.mjs`
   - Node HTTP server on `config.host`/`config.port`, default `0.0.0.0:17878`.
   - Bearer token or `?token=` auth.
-  - In-memory Maps: `sessions`, `commands`, `commandQueues`, `inboxItems`, approvals, diff reviews, push devices, audit events.
+  - In-memory Maps: `sessions`, `commands`, `commandQueues`, push devices, audit events.
   - `snapshot()` prunes stale sessions before returning data.
   - `/api/unregister` removes session state and broadcasts `session_removed`.
 
 Important functions:
 
 - `snapshot()` — returns full state to app.
-- `removeSessionState(sessionId, reason)` — delete session + command queues + commands + inbox items, broadcast removal.
+- `removeSessionState(sessionId, reason)` — delete session + command queues + commands, broadcast removal.
 - `pruneStaleSessions()` — remove sessions past `staleThresholdMs`.
 - `createCommand()` / `markCommandStatus()` — command lifecycle.
-- `routeCollaborationMessage()` — collaboration fan-out.
 
 ### Flutter Android app
 
@@ -132,14 +133,12 @@ Core routes:
 
 v2 routes:
 
-- `POST /api/v2/inbox/read`
+- `GET /api/v2/browse` — list remote directories on host
+- `POST /api/v2/send-attachment` — send files as attachments to sessions
 - `GET|POST /api/v2/push/devices`
 - `POST /api/v2/agents/create`
-- `POST /api/v2/approvals/:id/respond`
-- `POST /api/v2/diff-reviews/:id/respond`
-- `POST /api/v2/collaboration/messages`
 
-## Attachment Sending Investigation (Paused)
+## Attachment Sending
 
 Pi supports image attachments through `pi.sendUserMessage`:
 
@@ -152,15 +151,15 @@ pi.sendUserMessage(
 )
 ```
 
-Recommended future design:
+Implementation:
 
-- App uses file picker to choose images/text files.
+- App uses file picker (images, text files) and supports clipboard paste.
 - App sends `/api/send` payload with `attachments` array.
 - Server validates count/type/size and queues attachments with command.
 - Extension converts command into `TextContent | ImageContent` array and calls `pi.sendUserMessage(content)`.
-- V1 should support inline images and text/code files only; reject arbitrary binaries.
+- Only inline images and text/code files are supported; arbitrary binaries are rejected.
 
-Suggested caps:
+Limits:
 
 - max attachments: 5
 - image max size: 5 MB each

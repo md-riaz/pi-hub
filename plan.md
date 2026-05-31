@@ -5,7 +5,7 @@
 - Server topology: run central Pi Hub server on the user's Pi host machine now; keep protocol HTTP/SSE so a cloud/VPS relay can be added later without replacing clients.
 - Phone access: Android connects over any network (WiFi, LAN, VPN, etc.) to the hub host on TCP `17878`, protected by bearer token from `~/.pi/agent/pi-hub/config.json`.
 - History: memory-only on the hub server. Each live Pi session sends its recent session entries on registration and event updates while running; no server-side transcript database for now.
-- First controls: Flutter app can view sessions, send prompts, abort current work, trigger compaction, switch model, and shutdown a selected Pi session.
+- First controls: Flutter app can view sessions, send prompts, abort current work, trigger compaction, switch model, shutdown a selected Pi session, and log out of the active hub while preserving saved recent hub URLs/tokens for switching.
 - Agent creation: disabled by default; when explicitly enabled, `/api/v2/agents/create` spawns only the configured command without shell interpolation and only inside configured workspace roots.
 
 ## Architecture
@@ -26,7 +26,8 @@ Pi Hub server
 
 Flutter Android app
   ├─ connects over any network with bearer token
-  ├─ renders session list, transcript, current tool work
+  ├─ renders chat-style UI with conversation history
+  ├─ supports file attachments, clipboard paste, and server file browse
   └─ queues prompt/control commands to selected session
 ```
 
@@ -40,7 +41,9 @@ Flutter Android app
 1. MVP bridge and app
    - Pi extension: register, history snapshot, live events, command polling.
    - Server: `/api/snapshot`, `/api/stream`, `/api/send`, `/api/control`, `/api/poll`.
-   - Flutter: session list, transcript, prompt send, abort/compact/model/shutdown controls.
+   - Flutter: chat-style session detail UI with collapsible tool/command groups, prompt send, abort/compact/model/shutdown controls.
+   - File attachments (pick files/images from phone), clipboard paste, and server-side file browse are implemented.
+   - Inbox, approval, and diff-review systems have been removed.
 
 2. Hardening
    - Add better command acknowledgements and visible command result status.

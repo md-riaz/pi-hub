@@ -21,6 +21,7 @@ class SessionDetailScreen extends StatefulWidget {
   final ValueChanged<String>? onModelChanged;
   final VoidCallback? onPause;
   final VoidCallback? onStop;
+  final VoidCallback? onLogout;
   final HubClient client;
 
   const SessionDetailScreen({
@@ -34,6 +35,7 @@ class SessionDetailScreen extends StatefulWidget {
     this.onModelChanged,
     this.onPause,
     this.onStop,
+    this.onLogout,
     required this.client,
   });
 
@@ -76,7 +78,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     if (oldWidget.session.id != widget.session.id) {
       _currentModel = widget.session.model;
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
-    } else if (widget.session.history.length != oldWidget.session.history.length ||
+    } else if (widget.session.history.length !=
+            oldWidget.session.history.length ||
         widget.session.liveMessage != oldWidget.session.liveMessage) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
     }
@@ -84,7 +87,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 
   List<HubItem> get _items {
     final items = List<HubItem>.from(widget.session.history);
-    if (widget.session.liveMessage != null) items.add(widget.session.liveMessage!);
+    if (widget.session.liveMessage != null)
+      items.add(widget.session.liveMessage!);
     return items;
   }
 
@@ -107,7 +111,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   Widget build(BuildContext context) {
     final items = _items;
     final modelNames = widget.availableModels.map((m) => m.id).toList();
-    if (modelNames.isEmpty && _currentModel.isNotEmpty) modelNames.add(_currentModel);
+    if (modelNames.isEmpty && _currentModel.isNotEmpty)
+      modelNames.add(_currentModel);
 
     return PopScope(
       canPop: false,
@@ -122,110 +127,176 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             icon: const Icon(Icons.chevron_left, color: HubTheme.text),
             onPressed: () => Navigator.pop(context),
           ),
-        title: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(widget.session.displayName,
-                            style: const TextStyle(color: HubTheme.text, fontSize: 14, fontWeight: FontWeight.w600),
-                            overflow: TextOverflow.ellipsis),
-                      ),
-                      const SizedBox(width: 8),
-                      StatusDot(state: widget.session.health?.state ?? widget.session.status),
-                    ],
-                  ),
-                  Text(widget.session.cwd, style: HubTheme.monoSmall, overflow: TextOverflow.ellipsis),
-                ],
+          title: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            widget.session.displayName,
+                            style: const TextStyle(
+                              color: HubTheme.text,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        StatusDot(
+                          state:
+                              widget.session.health?.state ??
+                              widget.session.status,
+                        ),
+                      ],
+                    ),
+                    Text(
+                      widget.session.cwd,
+                      style: HubTheme.monoSmall,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            IconButton(
+              icon: Icon(Icons.pause, size: 17, color: HubTheme.yellow),
+              onPressed: widget.onPause,
+            ),
+            IconButton(
+              tooltip: 'Log out',
+              icon: const Icon(Icons.logout, size: 18, color: HubTheme.red),
+              onPressed: widget.onLogout,
+            ),
+            IconButton(
+              icon: const Icon(
+                Icons.more_horiz,
+                size: 19,
+                color: HubTheme.text2,
+              ),
+              onPressed: () => SessionMenu.show(
+                context,
+                onPause: widget.onPause,
+                onStop: widget.onStop,
+                onSwitchModel: modelNames.isNotEmpty
+                    ? () => ModelSheet.show(
+                        context,
+                        models: modelNames,
+                        selected: _currentModel,
+                        onSelect: (m) {
+                          setState(() => _currentModel = m);
+                          widget.onModelChanged?.call(m);
+                        },
+                      )
+                    : null,
+                onCopyId: () {},
               ),
             ),
           ],
         ),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.pause, size: 17, color: HubTheme.yellow),
-            onPressed: widget.onPause,
-          ),
-          IconButton(
-            icon: const Icon(Icons.more_horiz, size: 19, color: HubTheme.text2),
-            onPressed: () => SessionMenu.show(
-              context,
-              onPause: widget.onPause,
-              onStop: widget.onStop,
-              onSwitchModel: modelNames.isNotEmpty
-                  ? () => ModelSheet.show(context, models: modelNames, selected: _currentModel, onSelect: (m) {
-                      setState(() => _currentModel = m);
-                      widget.onModelChanged?.call(m);
-                    })
-                  : null,
-              onCopyId: () {},
-            ),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Metadata chips
-          Container(
-            height: 40,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: HubTheme.softLine))),
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: [
-                _Chip(icon: Icons.account_tree, text: widget.session.displayName),
-                const SizedBox(width: 8),
-                _Chip(icon: Icons.auto_awesome, text: _currentModel),
-                const SizedBox(width: 8),
-                _Chip(icon: Icons.folder, text: widget.session.cwd.split('/').last),
-              ],
-            ),
-          ),
-          // Events
-          Expanded(
-            child: items.isEmpty
-                ? const Center(child: Text('No conversation history yet', style: TextStyle(color: HubTheme.text3, fontFamily: 'monospace')))
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    itemCount: items.length,
-                    itemBuilder: (context, index) {
-                      final item = items[index];
-                      final isStreaming = widget.session.liveMessage?.id == item.id && widget.session.liveMessage?.streaming == true;
-                      return EventRenderer(
-                        event: item,
-                        isStreaming: isStreaming,
-                        onViewDiff: (edit) => DiffDrawer.show(context, file: edit.file, added: edit.added, removed: edit.removed),
-                        onQuickReply: (reply) {
-                          widget.onSend(reply);
-                          _scrollToBottom();
-                        },
-                      );
-                    },
+        body: Column(
+          children: [
+            // Metadata chips
+            Container(
+              height: 40,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: HubTheme.softLine)),
+              ),
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  _Chip(
+                    icon: Icons.account_tree,
+                    text: widget.session.displayName,
                   ),
-          ),
-          // Composer
-          Composer(
-            onSend: (text) {
-              widget.onSend(text);
-              _scrollToBottom();
-            },
-            model: _currentModel,
-            onAttachment: () => AttachmentSheet.show(context, client: widget.client, onPick: (attachments) { if (attachments.isNotEmpty) widget.onSend('[Attachment] ${attachments.first.name}'); }),
-            onSlashCommands: () => SlashSheet.show(context, onCommand: (cmd) => widget.onSend(cmd)),
-            onModelSwitch: modelNames.isNotEmpty
-                ? () => ModelSheet.show(context, models: modelNames, selected: _currentModel, onSelect: (m) {
-                    setState(() => _currentModel = m);
-                    widget.onModelChanged?.call(m);
-                  })
-                : null,
-          ),
-        ],
-      ),
+                  const SizedBox(width: 8),
+                  _Chip(icon: Icons.auto_awesome, text: _currentModel),
+                  const SizedBox(width: 8),
+                  _Chip(
+                    icon: Icons.folder,
+                    text: widget.session.cwd.split('/').last,
+                  ),
+                ],
+              ),
+            ),
+            // Events
+            Expanded(
+              child: items.isEmpty
+                  ? const Center(
+                      child: Text(
+                        'No conversation history yet',
+                        style: TextStyle(
+                          color: HubTheme.text3,
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    )
+                  : ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      itemCount: items.length,
+                      itemBuilder: (context, index) {
+                        final item = items[index];
+                        final isStreaming =
+                            widget.session.liveMessage?.id == item.id &&
+                            widget.session.liveMessage?.streaming == true;
+                        return EventRenderer(
+                          event: item,
+                          isStreaming: isStreaming,
+                          onViewDiff: (edit) => DiffDrawer.show(
+                            context,
+                            file: edit.file,
+                            added: edit.added,
+                            removed: edit.removed,
+                          ),
+                          onQuickReply: (reply) {
+                            widget.onSend(reply);
+                            _scrollToBottom();
+                          },
+                        );
+                      },
+                    ),
+            ),
+            // Composer
+            Composer(
+              onSend: (text) {
+                widget.onSend(text);
+                _scrollToBottom();
+              },
+              model: _currentModel,
+              onAttachment: () => AttachmentSheet.show(
+                context,
+                client: widget.client,
+                onPick: (attachments) {
+                  if (attachments.isNotEmpty)
+                    widget.onSend('[Attachment] ${attachments.first.name}');
+                },
+              ),
+              onSlashCommands: () => SlashSheet.show(
+                context,
+                onCommand: (cmd) => widget.onSend(cmd),
+              ),
+              onModelSwitch: modelNames.isNotEmpty
+                  ? () => ModelSheet.show(
+                      context,
+                      models: modelNames,
+                      selected: _currentModel,
+                      onSelect: (m) {
+                        setState(() => _currentModel = m);
+                        widget.onModelChanged?.call(m);
+                      },
+                    )
+                  : null,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -250,7 +321,10 @@ class _Chip extends StatelessWidget {
         children: [
           Icon(icon, size: 13, color: HubTheme.text2),
           const SizedBox(width: 6),
-          Text(text, style: const TextStyle(color: HubTheme.text2, fontSize: 11)),
+          Text(
+            text,
+            style: const TextStyle(color: HubTheme.text2, fontSize: 11),
+          ),
         ],
       ),
     );

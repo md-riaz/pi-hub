@@ -58,11 +58,10 @@ Fields:
     "capabilities": {
       "health": true,
       "eventEnvelope": true,
-      "inbox": false,
       "commandLifecycle": false,
-      "approvals": false,
-      "diffReviews": false,
       "agentCreation": false,
+      "browse": true,
+      "attachments": true,
       "pushDevices": true,
       "pushNotifications": {
         "enabled": false,
@@ -100,32 +99,10 @@ Health states:
 
 - `offline`: explicit unregister or online flag false.
 - `stale`: last presence older than server `staleThresholdMs`.
-- `blocked`: pending approval/diff review exists for session.
 - `error`: recent tool error, command failure, or agent error event.
 - `active`: running tool, thinking, or streaming message.
 - `idle`: online without attention.
 - `unknown`: insufficient data.
-
-## Inbox item
-
-Inbox items are server-owned action or notification records.
-
-```json
-{
-  "id": "inbox_01HXZ8RJA0EXAMPLE",
-  "sessionId": "session-004",
-  "type": "tool_error",
-  "severity": "error",
-  "title": "Tool failed",
-  "body": "shell_command failed in workspace app",
-  "createdAt": 1770000000000,
-  "updatedAt": 1770000000000,
-  "readAt": null,
-  "actionRef": { "kind": "session", "id": "session-004" }
-}
-```
-
-Planned types: `completion`, `approval`, `diff_review`, `tool_error`, `command_failure`, `stale`, `collaboration`, `system`.
 
 ## Command
 
@@ -149,49 +126,6 @@ Statuses: `queued`, `delivered`, `applied`, `failed`, `expired`, `cancelled`.
 
 Current v1 command payloads keep `id`, `type`, `text`, `modelId`, and `timestamp` for extension compatibility.
 
-## Approval request
-
-```json
-{
-  "id": "approval_01HXZ8RJA2EXAMPLE",
-  "sessionId": "session-010",
-  "title": "Approve command",
-  "body": "Agent wants to run a database migration.",
-  "risk": "high",
-  "choices": ["approve", "reject"],
-  "status": "pending",
-  "createdAt": 1770000000000,
-  "resolvedAt": null,
-  "responseComment": null
-}
-```
-
-Responses will queue an `approval_response` command and update the approval, inbox, audit, and stream records.
-
-## Diff review
-
-```json
-{
-  "id": "diff_01HXZ8RJA3EXAMPLE",
-  "sessionId": "session-011",
-  "title": "Review proposed changes",
-  "status": "pending",
-  "files": [
-    {
-      "path": "lib/main.dart",
-      "status": "modified",
-      "additions": 12,
-      "deletions": 4,
-      "patch": "@@ -1,3 +1,4 @@\n import 'package:flutter/material.dart';"
-    }
-  ],
-  "createdAt": 1770000000000,
-  "updatedAt": 1770000000000
-}
-```
-
-Server must sanitize paths and cap patch text before storing or broadcasting.
-
 ## Push device
 
 Provider-neutral device registration does not send notifications unless a provider is configured.
@@ -203,7 +137,7 @@ Provider-neutral device registration does not send notifications unless a provid
   "provider": "ntfy",
   "token": "provider-token-or-topic-not-returned-in-snapshot",
   "enabled": true,
-  "scopes": ["critical", "approval", "diff_review"],
+  "scopes": ["critical"],
   "updatedAt": 1770000000000
 }
 ```
@@ -216,7 +150,7 @@ Provider-neutral device registration does not send notifications unless a provid
   "platform": "android",
   "provider": "ntfy",
   "enabled": true,
-  "scopes": ["critical", "approval", "diff_review"],
+  "scopes": ["critical"],
   "label": "Pi Hub Android app",
   "createdAt": 1770000000000,
   "updatedAt": 1770000000000,
@@ -242,6 +176,48 @@ Agent creation is disabled by default. When enabled, mobile submits a bounded re
 
 Server validates `cwd` under configured workspace roots and spawns the configured Pi command without shell interpolation. Server must reject arbitrary command strings.
 
+## Browse remote directories
+
+`GET /api/v2/browse?path=/home/user/projects` returns directory listing for the host machine. Requires `browse` capability.
+
+Request query params: `?path=<absolute-path>` (defaults to configured workspace root).
+
+Response:
+
+```json
+{
+  "ok": true,
+  "path": "/home/user/projects",
+  "parent": "/home/user",
+  "items": [
+    { "name": "project-a", "type": "directory", "size": null, "modifiedAt": 1770000000000 },
+    { "name": "README.md", "type": "file", "size": 1024, "modifiedAt": 1770000000000 }
+  ]
+}
+```
+
+Server must reject paths outside configured workspace roots.
+
+## Send attachment
+
+`POST /api/v2/send-attachment` sends files as attachments to a session. Requires `attachments` capability.
+
+Request body:
+
+```json
+{
+  "sessionId": "session-001",
+  "text": "Describe this image",
+  "attachments": [
+    { "name": "screenshot.png", "mimeType": "image/png", "data": "<base64>" }
+  ]
+}
+```
+
+Limits: max 5 attachments, images up to 5 MB each, text files up to 100k chars. Only inline images and text/code files are supported; arbitrary binaries are rejected.
+
+Server validates size and type, then queues a command with attachments. Extension converts to Pi `TextContent | ImageContent` array via `pi.sendUserMessage`.
+
 ## Representative event types
 
 | Type | Payload summary |
@@ -254,6 +230,3 @@ Server validates `cwd` under configured workspace roots and spawns the configure
 | `session.tool_end` | result, `isError`, endedAt |
 | `command.queued` | command id/type/session id |
 | `command.result` | command id/type/applied/error |
-| `approval.requested` | approval record |
-| `diff_review.requested` | diff review record |
-| `inbox.updated` | inbox item |

@@ -39,7 +39,7 @@ Reason: `/hub info` already shows token; separate token command created confusio
 
 ### Stale session pruning
 
-Reason: app should show only connected/current agents. Server removes stale sessions and related commands/inbox state.
+Reason: app should show only connected/current agents. Server removes stale sessions and related command queues.
 
 ### Terminal-style detail view
 
@@ -70,7 +70,6 @@ Read:
 
 1. `apps/pi_hub_app/lib/main.dart` selected/detail session state.
 2. `apps/pi_hub_app/lib/src/mission_control_screen.dart` narrow vs wide layout.
-3. `apps/pi_hub_app/lib/src/widgets/agent_card.dart`.
 
 ### Change detail transcript UI
 
@@ -87,19 +86,23 @@ Read:
 2. `apps/pi_hub_app/lib/src/hub_models.dart`.
 3. Server route in `pi-hub-server.mjs`.
 4. Extension command handling in `pi-hub.ts` `pollCommands()`.
+5. `apps/pi_hub_app/lib/src/widgets/remote_path_browser.dart` for browse endpoint UI.
 
 ## Feature Backlog Notes
 
-### Attachments from app (requested but paused)
+### Attachments from app (implemented)
 
-Pi supports `sendUserMessage` with text and image content arrays. Future implementation should add:
+Pi supports `sendUserMessage` with text and image content arrays. Implementation:
 
-- Flutter file/image picker.
-- `/api/send` `attachments` payload.
-- Server validation and command queuing.
-- Extension conversion to Pi `TextContent | ImageContent` array.
+- Flutter file/image picker and clipboard paste for selecting attachments.
+- `POST /api/v2/send-attachment` with `{sessionId, text, attachments: [{name, mimeType, data}]}`.
+- Server validates size/type (max 5 attachments, images up to 5 MB, text files up to 100k chars) and queues command.
+- Extension converts to Pi `TextContent | ImageContent` array via `pi.sendUserMessage`.
+- Only inline images and text/code files are supported; arbitrary binaries are rejected.
 
-Do not implement arbitrary binary injection directly into LLM context. Start with images and text/code files.
+### Chat-style UI redesign
+
+Agent detail uses a terminal-style transcript view: compact terminal colors, monospace text, collapsed tools/commands/outputs. Tools, commands, and tool-like transcript entries collapse by default so chat history stays readable. The session list is now an inner screen on narrow/mobile layouts rather than a tab.
 
 ### Better no-admin connectivity
 

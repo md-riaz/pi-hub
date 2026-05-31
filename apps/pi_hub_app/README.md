@@ -1,6 +1,6 @@
 # Pi Hub Android App
 
-Flutter Android client for Pi Hub mission control.
+Flutter Android client for Pi Hub mission control (v2.0.1+1).
 
 ## Run from source
 
@@ -57,10 +57,11 @@ For physical phone access, keep the hub bound to `0.0.0.0` and allow inbound TCP
 ## Use
 
 1. Tap **Connect**.
-2. Select a session or attention item.
-3. Review transcript, tools, health, inbox, approvals, or diff reviews.
-4. Send prompts or run controls for the selected session.
-5. Optional server features such as push registration and agent creation appear only when configured/enabled by the hub.
+2. Select a session.
+3. Review chat-style conversation history with collapsible tool, terminal, and edit groups.
+4. Send prompts, attach files, paste from clipboard, or run server file browse.
+5. Run controls: abort, compact, switch model, or shutdown for the selected session.
+6. Optional server features such as agent creation appear only when configured/enabled by the hub.
 
 ## Test
 

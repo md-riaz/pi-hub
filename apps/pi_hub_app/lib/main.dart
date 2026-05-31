@@ -84,7 +84,11 @@ class _HubHomePageState extends State<HubHomePage> {
     if (recentJson != null) {
       _recentConnections = recentJson.map((e) {
         final parts = e.split('|||');
-        return {'name': parts[0], 'url': parts.length > 1 ? parts[1] : '', 'token': parts.length > 2 ? parts[2] : ''};
+        return {
+          'name': parts[0],
+          'url': parts.length > 1 ? parts[1] : '',
+          'token': parts.length > 2 ? parts[2] : '',
+        };
       }).toList();
     }
     if (savedUrl != null &&
@@ -106,9 +110,14 @@ class _HubHomePageState extends State<HubHomePage> {
       final name = Uri.tryParse(url)?.host ?? url;
       _recentConnections.removeWhere((c) => c['url'] == url);
       _recentConnections.insert(0, {'name': name, 'url': url, 'token': token});
-      if (_recentConnections.length > 5) _recentConnections = _recentConnections.sublist(0, 5);
-      await prefs.setStringList(_prefRecentConnections,
-        _recentConnections.map((c) => '${c['name']}|||${c['url']}|||${c['token']}').toList());
+      if (_recentConnections.length > 5)
+        _recentConnections = _recentConnections.sublist(0, 5);
+      await prefs.setStringList(
+        _prefRecentConnections,
+        _recentConnections
+            .map((c) => '${c['name']}|||${c['url']}|||${c['token']}')
+            .toList(),
+      );
     }
   }
 
@@ -190,10 +199,7 @@ class _HubHomePageState extends State<HubHomePage> {
         _connectionError = help;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(help),
-          duration: const Duration(seconds: 8),
-        ),
+        SnackBar(content: Text(help), duration: const Duration(seconds: 8)),
       );
     }
   }
@@ -208,9 +214,31 @@ class _HubHomePageState extends State<HubHomePage> {
     });
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Disconnected'), duration: Duration(seconds: 1)),
+        const SnackBar(
+          content: Text('Disconnected'),
+          duration: Duration(seconds: 1),
+        ),
       );
     }
+  }
+
+  Future<void> _logout() async {
+    await _subscription?.cancel();
+    _subscription = null;
+
+    if (!mounted) return;
+    setState(() {
+      _snapshot = null;
+      _detailSessionId = null;
+      _connectionState = 'Disconnected';
+      _connectionError = null;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Logged out. Saved hubs are still available.'),
+        duration: Duration(seconds: 2),
+      ),
+    );
   }
 
   Future<void> _sendMessage(String sessionId, String text) async {
@@ -222,9 +250,9 @@ class _HubHomePageState extends State<HubHomePage> {
       );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Send failed: $error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Send failed: $error')));
     }
   }
 
@@ -235,13 +263,16 @@ class _HubHomePageState extends State<HubHomePage> {
       await _client.sendControl(_detailSessionId!, action, modelId: modelId);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$label queued'), duration: const Duration(seconds: 1)),
+        SnackBar(
+          content: Text('$label queued'),
+          duration: const Duration(seconds: 1),
+        ),
       );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$label failed: $error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('$label failed: $error')));
     }
   }
 
@@ -274,16 +305,28 @@ class _HubHomePageState extends State<HubHomePage> {
           context,
           client: _client,
           availableModels: _snapshot?.sessions.isNotEmpty == true
-              ? _snapshot!.sessions.first.availableModels.map((m) => m.id).toList()
+              ? _snapshot!.sessions.first.availableModels
+                    .map((m) => m.id)
+                    .toList()
               : [],
           onStart: (result) async {
             try {
               await _client.createAgent(
-                AgentCreateRequest(cwd: result.path, initialPrompt: result.prompt, model: result.model),
+                AgentCreateRequest(
+                  cwd: result.path,
+                  initialPrompt: result.prompt,
+                  model: result.model,
+                ),
               );
-              if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Session created')));
+              if (mounted)
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Session created')),
+                );
             } catch (e) {
-              if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Create failed: $e')));
+              if (mounted)
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text('Create failed: $e')));
             }
           },
         );
@@ -297,14 +340,25 @@ class _HubHomePageState extends State<HubHomePage> {
               try {
                 await _client.sendMessage(sid, '[Broadcast] ${result.prompt}');
               } catch (e) {
-                if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Broadcast to $sid failed: $e')));
+                if (mounted)
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Broadcast to $sid failed: $e')),
+                  );
               }
             }
-            if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Broadcast sent to ${result.sessionIds.length} sessions')));
+            if (mounted)
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'Broadcast sent to ${result.sessionIds.length} sessions',
+                  ),
+                ),
+              );
           },
         );
       },
       onDisconnect: _disconnect,
+      onLogout: _logout,
       onRecentConnection: (conn) {
         _serverController.text = conn['url'] ?? '';
         _tokenController.text = conn['token'] ?? '';
