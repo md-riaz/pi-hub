@@ -49,6 +49,25 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   void initState() {
     super.initState();
     _currentModel = widget.session.model;
+    _scrollController.addListener(_checkIfAtBottom);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkIfAtBottom();
+      _scrollToBottom();
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_checkIfAtBottom);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _checkIfAtBottom() {
+    if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
+    final atBottom = pos.maxScrollExtent - pos.pixels < 100;
+    if (atBottom != _isAtBottom) setState(() => _isAtBottom = atBottom);
   }
 
   @override
@@ -56,13 +75,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.session.id != widget.session.id) {
       _currentModel = widget.session.model;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    } else if (widget.session.history.length != oldWidget.session.history.length ||
+        widget.session.liveMessage != oldWidget.session.liveMessage) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
     }
-  }
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
   }
 
   List<HubItem> get _items {
@@ -71,12 +88,15 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     return items;
   }
 
+  bool _isAtBottom = true;
+
   void _scrollToBottom() {
+    if (!_isAtBottom) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
+          duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
         );
       }
