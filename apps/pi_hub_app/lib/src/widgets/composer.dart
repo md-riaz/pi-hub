@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import '../hub_client.dart';
 import '../theme/hub_theme.dart';
@@ -13,6 +15,7 @@ class Composer extends StatefulWidget {
   final VoidCallback? onModelInfo;
   final List<AttachmentData> attachments;
   final ValueChanged<int>? onRemoveAttachment;
+  final ValueChanged<AttachmentData>? onAddAttachment;
   final VoidCallback? onStopRunning;
   final VoidCallback? onQueuedMessages;
   final bool modelSupportsImages;
@@ -28,6 +31,7 @@ class Composer extends StatefulWidget {
     this.onModelInfo,
     this.attachments = const [],
     this.onRemoveAttachment,
+    this.onAddAttachment,
     this.onStopRunning,
     this.onQueuedMessages,
     this.modelSupportsImages = false,
@@ -67,6 +71,46 @@ class _ComposerState extends State<Composer> {
       widget.onSend(text);
     }
     _controller.clear();
+  }
+
+  void _handleInsertedContent(KeyboardInsertedContent content) {
+    final bytes = content.data;
+    if (bytes == null || bytes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Image paste received, but ${content.uri} did not include readable bytes.',
+          ),
+        ),
+      );
+      return;
+    }
+    final mimeType = content.mimeType;
+    widget.onAddAttachment?.call(
+      AttachmentData(
+        name: 'pasted-image.${_extensionForMime(mimeType)}',
+        mimeType: mimeType,
+        data: base64Encode(bytes),
+      ),
+    );
+  }
+
+  String _extensionForMime(String mimeType) {
+    switch (mimeType.toLowerCase()) {
+      case 'image/jpeg':
+      case 'image/jpg':
+        return 'jpg';
+      case 'image/gif':
+        return 'gif';
+      case 'image/webp':
+        return 'webp';
+      case 'image/bmp':
+        return 'bmp';
+      case 'image/tiff':
+        return 'tiff';
+      default:
+        return 'png';
+    }
   }
 
   @override
@@ -162,6 +206,9 @@ class _ComposerState extends State<Composer> {
               ),
               onSubmitted: (_) => _send(),
               textInputAction: TextInputAction.newline,
+              contentInsertionConfiguration: ContentInsertionConfiguration(
+                onContentInserted: _handleInsertedContent,
+              ),
             ),
             Row(
               children: [

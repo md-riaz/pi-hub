@@ -671,6 +671,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                   onRemoveAttachment: (index) {
                     setState(() => _pendingAttachments.removeAt(index));
                   },
+                  onAddAttachment: (attachment) {
+                    setState(() => _pendingAttachments.add(attachment));
+                  },
                   onAttachment: () => AttachmentSheet.pickImages(
                     context,
                     onPick: (attachments) {
