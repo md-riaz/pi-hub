@@ -35,7 +35,7 @@ class HubHomePage extends StatefulWidget {
   State<HubHomePage> createState() => _HubHomePageState();
 }
 
-class _HubHomePageState extends State<HubHomePage> {
+class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
   static const _prefServerUrl = 'hub_server_url';
   static const _prefToken = 'hub_token';
   static const _prefRecentConnections = 'hub_recent_connections';
@@ -51,6 +51,7 @@ class _HubHomePageState extends State<HubHomePage> {
   String? _connectionError;
   bool _connecting = false;
   bool _manualDisconnect = false;
+  bool _resumeRefreshInFlight = false;
   int _streamRetry = 0;
   Timer? _reconnectTimer;
   List<Map<String, String>> _recentConnections = [];
@@ -62,11 +63,13 @@ class _HubHomePageState extends State<HubHomePage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadSavedConnection();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _reconnectTimer?.cancel();
     _subscription?.cancel();
     _serverController.dispose();
@@ -245,6 +248,54 @@ class _HubHomePageState extends State<HubHomePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(help), duration: const Duration(seconds: 8)),
       );
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshAfterResume();
+    } else if (state == AppLifecycleState.paused && !_manualDisconnect) {
+      setState(() => _connectionState = 'Background');
+    }
+  }
+
+  Future<void> _refreshAfterResume() async {
+    if (_manualDisconnect || _connecting || _resumeRefreshInFlight) return;
+    if (_serverController.text.trim().isEmpty ||
+        _tokenController.text.trim().isEmpty) {
+      return;
+    }
+    _resumeRefreshInFlight = true;
+    _reconnectTimer?.cancel();
+    final staleSubscription = _subscription;
+    _subscription = null;
+    unawaited(staleSubscription?.cancel());
+
+    if (mounted) {
+      setState(() => _connectionState = 'Resuming...');
+    }
+
+    try {
+      _client.configure(
+        baseUrl: _serverController.text,
+        token: _tokenController.text,
+      );
+      final snapshot = await _client.fetchSnapshot();
+      if (!mounted || _manualDisconnect) return;
+      setState(() {
+        _snapshot = snapshot;
+        _streamRetry = 0;
+        _connectionState = 'Live';
+        _connectionError = null;
+      });
+      _startStream();
+    } catch (error) {
+      if (!mounted || _manualDisconnect) return;
+      setState(() => _connectionState = 'Reconnect failed: $error');
+      _scheduleReconnect();
+    } finally {
+      _resumeRefreshInFlight = false;
     }
   }
 

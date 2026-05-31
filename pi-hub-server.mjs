@@ -853,14 +853,34 @@ function upsertHistoryItem(session, rawItem) {
   const item = sanitizeItem(rawItem);
   const commandId = item?.metadata?.commandId;
   let idx = commandId ? session.history.findIndex(existing => existing?.metadata?.commandId === commandId) : -1;
-  if (idx < 0 && item?.kind === "user" && item?.text) {
-    const source = item?.metadata?.source;
-    idx = session.history.findIndex(existing => existing?.kind === "user" && existing?.text === item.text && existing?.metadata?.source === source);
-  }
   if (idx < 0) idx = session.history.findIndex(existing => existing.id === item.id);
+  if (idx < 0 && item?.kind === "user" && item?.text) {
+    idx = session.history.findIndex(existing => existing?.kind === "user" && existing?.text === item.text);
+  }
   if (idx >= 0) session.history[idx] = { ...session.history[idx], ...item, metadata: { ...(session.history[idx].metadata || {}), ...(item.metadata || {}) } };
   else session.history.push(item);
   session.history = session.history.slice(-Number(config.historyLimit));
+}
+
+function recordOutgoingUserMessage(session, command, text, extraMetadata = {}) {
+  const item = sanitizeItem({
+    id: `mobile-${command.id}`,
+    kind: "user",
+    role: "user",
+    timestamp: command.createdAt,
+    text,
+    metadata: {
+      source: "mobile",
+      commandId: command.id,
+      commandType: command.type,
+      ...extraMetadata,
+    },
+  });
+  upsertHistoryItem(session, item);
+  const event = normalizeEvent({ type: "input", item }, session.id, "input");
+  session.lastEvent = event;
+  broadcast({ type: "session_updated", reason: "input", session: publicSession(session), event });
+  return item;
 }
 
 function handleHubEvent(session, event) {
@@ -1356,9 +1376,7 @@ const server = http.createServer(async (req, res) => {
       const commandType = text.startsWith("/") ? "slash_command" : "user_message";
       const command = createCommand(sessionId, commandType, { text });
       const session = getOrCreateSession(sessionId);
-      const event = normalizeEvent({ type: "command_queued", command: { id: command.id, type: command.type, timestamp: command.createdAt } }, sessionId, "command_queued");
-      session.lastEvent = event;
-      broadcast({ type: "command_queued", sessionId, command: publicCommand(command) });
+      recordOutgoingUserMessage(session, command, text);
       sendJson(res, 200, { ok: true, commandId: command.id });
       return;
     }
@@ -1491,9 +1509,10 @@ const server = http.createServer(async (req, res) => {
         savedAttachments,
         attachmentMode: modelSupportsImages ? "inline-image" : "file-path",
       });
-      const event = normalizeEvent({ type: "command_queued", command: { id: command.id, type: command.type, timestamp: command.createdAt } }, sessionId, "command_queued");
-      session.lastEvent = event;
-      broadcast({ type: "command_queued", sessionId, command: publicCommand(command) });
+      recordOutgoingUserMessage(session, command, messageText, {
+        hasAttachments: savedAttachments.length > 0,
+        attachmentMode: modelSupportsImages ? "inline-image" : "file-path",
+      });
       sendJson(res, 200, { ok: true, commandId: command.id, attachments: savedAttachments });
       return;
     }
