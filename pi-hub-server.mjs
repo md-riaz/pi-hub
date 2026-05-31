@@ -36,9 +36,9 @@ const DEFAULT_CONFIG = {
     },
   },
   agentCreation: {
-    enabled: false,
+    enabled: true,
     piCommand: "pi",
-    workspaceRoots: [],
+    workspaceRoots: [os.homedir()],
     defaultArgs: [],
     testMode: false,
   },
@@ -57,7 +57,7 @@ function normalizeAgentCreationConfig(value = {}) {
       : DEFAULT_CONFIG.agentCreation.piCommand,
     workspaceRoots: Array.isArray(source.workspaceRoots)
       ? source.workspaceRoots.filter(root => typeof root === "string" && root.trim()).map(root => path.resolve(root))
-      : [],
+      : DEFAULT_CONFIG.agentCreation.workspaceRoots,
     defaultArgs: Array.isArray(source.defaultArgs)
       ? source.defaultArgs.filter(arg => typeof arg === "string")
       : [],

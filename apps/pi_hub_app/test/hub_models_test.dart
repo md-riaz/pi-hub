@@ -144,7 +144,7 @@ void main() {
     expect(snapshot.auditSummary.totalCount, 9);
   });
 
-  test('activeOnly filters offline sessions but keeps idle stale sessions', () {
+  test('activeOnly filters offline and stale sessions', () {
     final now = DateTime.now().millisecondsSinceEpoch;
     final snapshot = HubSnapshot.fromJson({
       'server': {'staleThresholdMs': 120000},
@@ -176,11 +176,7 @@ void main() {
       ],
     }).activeOnly(nowMs: now);
 
-    expect(snapshot.sessions.map((session) => session.id), [
-      'active',
-      'stale-health',
-      'stale-age',
-    ]);
+    expect(snapshot.sessions.map((session) => session.id), ['active']);
   });
 
   test('displayName prefers session name and falls back to cwd basename', () {

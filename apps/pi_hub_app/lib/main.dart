@@ -54,6 +54,7 @@ class _HubHomePageState extends State<HubHomePage> {
   int _streamRetry = 0;
   Timer? _reconnectTimer;
   List<Map<String, String>> _recentConnections = [];
+  String? _lastUsedModel;
 
   bool get _connected =>
       _snapshot != null && !_connectionState.startsWith('Failed');
@@ -310,6 +311,19 @@ class _HubHomePageState extends State<HubHomePage> {
     }
   }
 
+  List<String> _availableModelIds() {
+    final seen = <String>{};
+    final out = <String>[];
+    for (final session in _snapshot?.sessions ?? const <HubSession>[]) {
+      for (final model in session.availableModels) {
+        if (model.id.isNotEmpty && seen.add(model.id)) out.add(model.id);
+      }
+      if (session.model.isNotEmpty && seen.add(session.model))
+        out.add(session.model);
+    }
+    return out;
+  }
+
   Future<void> _runControl(String action, {String? modelId}) async {
     if (_detailSessionId == null) return;
     final label = switch (action) {
@@ -362,18 +376,17 @@ class _HubHomePageState extends State<HubHomePage> {
         NewSessionSheet.show(
           context,
           client: _client,
-          availableModels: _snapshot?.sessions.isNotEmpty == true
-              ? _snapshot!.sessions.first.availableModels
-                    .map((m) => m.id)
-                    .toList()
-              : [],
+          availableModels: _availableModelIds(),
+          selectedModel:
+              _lastUsedModel ?? _snapshot?.sessions.firstOrNull?.model,
           onStart: (result) async {
             try {
+              _lastUsedModel = result.model;
               await _client.createAgent(
                 AgentCreateRequest(
                   cwd: result.path,
                   initialPrompt: result.prompt,
-                  model: result.model,
+                  model: result.model == 'default' ? '' : result.model,
                 ),
               );
               if (context.mounted) {

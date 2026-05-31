@@ -332,7 +332,12 @@ class HubSession {
   bool isActive({int? staleThresholdMs, int? nowMs}) {
     if (!online) return false;
     final state = health?.state.toLowerCase();
-    if (state == 'offline') return false;
+    if (state == 'offline' || state == 'stale') return false;
+    final last = lastSeen;
+    if (last != null && staleThresholdMs != null && staleThresholdMs > 0) {
+      final now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
+      if (now - last > staleThresholdMs) return false;
+    }
     return true;
   }
 

@@ -16,6 +16,13 @@ interface PiHubConfig {
 	historyLimit: number;
 	autoStartServer: boolean;
 	pollIntervalMs: number;
+	agentCreation?: {
+		enabled?: boolean;
+		piCommand?: string;
+		workspaceRoots?: string[];
+		defaultArgs?: string[];
+		testMode?: boolean;
+	};
 }
 
 interface HubItem {
@@ -39,6 +46,13 @@ const DEFAULT_CONFIG: PiHubConfig = {
 	historyLimit: 500,
 	autoStartServer: true,
 	pollIntervalMs: 1500,
+	agentCreation: {
+		enabled: true,
+		piCommand: "pi",
+		workspaceRoots: [homedir()],
+		defaultArgs: [],
+		testMode: false,
+	},
 };
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
