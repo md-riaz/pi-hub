@@ -44,7 +44,8 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final canConnect = widget.serverController.text.trim().isNotEmpty &&
+    final canConnect =
+        widget.serverController.text.trim().isNotEmpty &&
         widget.tokenController.text.trim().isNotEmpty &&
         !widget.connecting;
 
@@ -58,7 +59,8 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
               const SizedBox(height: 60),
               // Pi logo
               Container(
-                width: 64, height: 64,
+                width: 64,
+                height: 64,
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
                     colors: [Color(0xFF17243B), Color(0xFF281C45)],
@@ -69,11 +71,19 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                   border: Border.all(color: HubTheme.line),
                 ),
                 child: const Center(
-                  child: Text('π', style: TextStyle(color: HubTheme.blue, fontSize: 32, fontWeight: FontWeight.bold, fontFamily: 'monospace')),
+                  child: Text(
+                    'π',
+                    style: TextStyle(
+                      color: HubTheme.blue,
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
-              const Text('Pi Hub', style: HubTheme.headingL),
+              const Text('Pi Mobile Companion', style: HubTheme.headingL),
               const SizedBox(height: 8),
               Text(
                 'Connect to your hub server and control Pi sessions from your phone.',
@@ -112,14 +122,27 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       if (widget.connecting)
-                        const SizedBox(width: 17, height: 17, child: CircularProgressIndicator(strokeWidth: 2, color: HubTheme.text3))
+                        const SizedBox(
+                          width: 17,
+                          height: 17,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: HubTheme.text3,
+                          ),
+                        )
                       else
-                        const Icon(Icons.wifi, size: 17, color: Color(0xFF06111F)),
+                        const Icon(
+                          Icons.wifi,
+                          size: 17,
+                          color: Color(0xFF06111F),
+                        ),
                       const SizedBox(width: 8),
                       Text(
                         widget.connecting ? 'Connecting...' : 'Connect',
                         style: TextStyle(
-                          color: canConnect ? const Color(0xFF06111F) : HubTheme.text3,
+                          color: canConnect
+                              ? const Color(0xFF06111F)
+                              : HubTheme.text3,
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
                         ),
@@ -141,12 +164,20 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.error_outline, size: 16, color: HubTheme.red),
+                      const Icon(
+                        Icons.error_outline,
+                        size: 16,
+                        color: HubTheme.red,
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           widget.error!,
-                          style: const TextStyle(color: HubTheme.red, fontSize: 12, height: 1.4),
+                          style: const TextStyle(
+                            color: HubTheme.red,
+                            fontSize: 12,
+                            height: 1.4,
+                          ),
                         ),
                       ),
                     ],
@@ -157,7 +188,13 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
               // Recent connections
               Align(
                 alignment: Alignment.centerLeft,
-                child: Text('RECENT CONNECTIONS', style: HubTheme.caption.copyWith(fontWeight: FontWeight.w700, letterSpacing: 1)),
+                child: Text(
+                  'RECENT CONNECTIONS',
+                  style: HubTheme.caption.copyWith(
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1,
+                  ),
+                ),
               ),
               const SizedBox(height: 12),
               if (widget.recentConnections.isEmpty)
@@ -166,18 +203,20 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                   child: Text('No recent connections', style: HubTheme.caption),
                 )
               else
-                ...widget.recentConnections.map((conn) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: _RecentConn(
-                    name: conn['name'] ?? '',
-                    url: conn['url'] ?? '',
-                    onTap: () {
-                      widget.serverController.text = conn['url'] ?? '';
-                      widget.tokenController.text = conn['token'] ?? '';
-                      widget.onRecentConnection?.call(conn);
-                    },
+                ...widget.recentConnections.map(
+                  (conn) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: _RecentConn(
+                      name: conn['name'] ?? '',
+                      url: conn['url'] ?? '',
+                      onTap: () {
+                        widget.serverController.text = conn['url'] ?? '';
+                        widget.tokenController.text = conn['token'] ?? '';
+                        widget.onRecentConnection?.call(conn);
+                      },
+                    ),
                   ),
-                )),
+                ),
               const SizedBox(height: 40),
             ],
           ),
@@ -194,7 +233,13 @@ class _InputField extends StatelessWidget {
   final String placeholder;
   final bool obscure;
 
-  const _InputField({required this.icon, required this.label, required this.controller, required this.placeholder, this.obscure = false});
+  const _InputField({
+    required this.icon,
+    required this.label,
+    required this.controller,
+    required this.placeholder,
+    this.obscure = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -205,23 +250,46 @@ class _InputField extends StatelessWidget {
           children: [
             Icon(icon, size: 13, color: HubTheme.text2),
             const SizedBox(width: 6),
-            Text(label, style: TextStyle(color: HubTheme.text2, fontSize: 12, fontWeight: FontWeight.w500)),
+            Text(
+              label,
+              style: TextStyle(
+                color: HubTheme.text2,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 6),
         TextField(
           controller: controller,
           obscureText: obscure,
-          style: const TextStyle(color: HubTheme.text, fontSize: 14, fontFamily: 'monospace'),
+          style: const TextStyle(
+            color: HubTheme.text,
+            fontSize: 14,
+            fontFamily: 'monospace',
+          ),
           decoration: InputDecoration(
             hintText: placeholder,
             hintStyle: const TextStyle(color: HubTheme.text3),
             filled: true,
             fillColor: HubTheme.panel,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: HubTheme.line)),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: HubTheme.line)),
-            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: HubTheme.blue)),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: const BorderSide(color: HubTheme.line),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: const BorderSide(color: HubTheme.line),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: const BorderSide(color: HubTheme.blue),
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 14,
+            ),
           ),
         ),
       ],
@@ -233,7 +301,11 @@ class _RecentConn extends StatelessWidget {
   final String name;
   final String url;
   final VoidCallback onTap;
-  const _RecentConn({required this.name, required this.url, required this.onTap});
+  const _RecentConn({
+    required this.name,
+    required this.url,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -249,8 +321,12 @@ class _RecentConn extends StatelessWidget {
         child: Row(
           children: [
             Container(
-              width: 36, height: 36,
-              decoration: BoxDecoration(color: HubTheme.card, borderRadius: BorderRadius.circular(12)),
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: HubTheme.card,
+                borderRadius: BorderRadius.circular(12),
+              ),
               child: const Icon(Icons.dns, size: 17, color: HubTheme.green),
             ),
             const SizedBox(width: 12),
@@ -258,8 +334,19 @@ class _RecentConn extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(name, style: const TextStyle(color: HubTheme.text, fontSize: 14, fontWeight: FontWeight.w600)),
-                  Text(url, style: HubTheme.monoSmall, overflow: TextOverflow.ellipsis),
+                  Text(
+                    name,
+                    style: const TextStyle(
+                      color: HubTheme.text,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    url,
+                    style: HubTheme.monoSmall,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ],
               ),
             ),

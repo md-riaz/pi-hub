@@ -21,6 +21,9 @@ class SessionDetailScreen extends StatefulWidget {
   final ValueChanged<String>? onModelChanged;
   final VoidCallback? onBack;
   final HubClient client;
+  final String connectionState;
+  final bool connected;
+  final VoidCallback? onReconnect;
 
   const SessionDetailScreen({
     super.key,
@@ -33,6 +36,9 @@ class SessionDetailScreen extends StatefulWidget {
     this.onModelChanged,
     this.onBack,
     required this.client,
+    this.connectionState = 'Live',
+    this.connected = true,
+    this.onReconnect,
   });
 
   @override
@@ -564,6 +570,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           children: [
             Column(
               children: [
+                _ConnectionStatusBar(
+                  state: widget.connectionState,
+                  connected: widget.connected,
+                  onReconnect: widget.onReconnect,
+                ),
                 // Events
                 Expanded(
                   child: items.isEmpty
@@ -666,6 +677,83 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ConnectionStatusBar extends StatelessWidget {
+  final String state;
+  final bool connected;
+  final VoidCallback? onReconnect;
+
+  const _ConnectionStatusBar({
+    required this.state,
+    required this.connected,
+    this.onReconnect,
+  });
+
+  bool get _show {
+    final lower = state.toLowerCase();
+    return !connected ||
+        lower.contains('reconnect') ||
+        lower.contains('failed') ||
+        lower.contains('connecting') ||
+        lower.contains('disconnected');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_show) return const SizedBox.shrink();
+    final lower = state.toLowerCase();
+    final isError = lower.contains('failed') || lower.contains('error');
+    final color = isError ? HubTheme.red : HubTheme.yellow;
+    final label = lower.contains('reconnect') || lower.contains('connecting')
+        ? state
+        : connected
+        ? state
+        : 'Not connected';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        border: Border(bottom: BorderSide(color: color.withOpacity(0.35))),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 14,
+            height: 14,
+            child: lower.contains('connecting') || lower.contains('reconnect')
+                ? CircularProgressIndicator(strokeWidth: 2, color: color)
+                : Icon(Icons.cloud_off_outlined, size: 14, color: color),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (onReconnect != null)
+            GestureDetector(
+              onTap: onReconnect,
+              child: Text(
+                'Retry',
+                style: TextStyle(
+                  color: color,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

@@ -20,7 +20,7 @@ class PiHubApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Pi Hub',
+      title: 'Pi Mobile Companion',
       debugShowCheckedModeBanner: false,
       theme: HubTheme.themeData,
       home: const HubHomePage(),
