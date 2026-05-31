@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import http from "node:http";
-import https from "node:https";
 import os from "node:os";
 import fs from "node:fs";
 import path from "node:path";
@@ -23,12 +22,6 @@ const DEFAULT_CONFIG = {
   staleThresholdMs: 120_000,
   commandTimeoutMs: 300_000,
   commandHistoryLimit: 500,
-  inboxLimit: 500,
-  inboxDedupeWindowMs: 300_000,
-  diffReviewLimit: 100,
-  diffReviewMaxFiles: 20,
-  diffReviewPatchMaxChars: 12_000,
-  diffReviewTotalPatchMaxChars: 60_000,
   auditLimit: 500,
   pushDeviceLimit: 100,
   push: {
@@ -120,12 +113,6 @@ function ensureConfig() {
   if (!Number.isFinite(Number(config.staleThresholdMs))) config.staleThresholdMs = DEFAULT_CONFIG.staleThresholdMs;
   if (!Number.isFinite(Number(config.commandTimeoutMs))) config.commandTimeoutMs = DEFAULT_CONFIG.commandTimeoutMs;
   if (!Number.isFinite(Number(config.commandHistoryLimit))) config.commandHistoryLimit = DEFAULT_CONFIG.commandHistoryLimit;
-  if (!Number.isFinite(Number(config.inboxLimit))) config.inboxLimit = DEFAULT_CONFIG.inboxLimit;
-  if (!Number.isFinite(Number(config.inboxDedupeWindowMs))) config.inboxDedupeWindowMs = DEFAULT_CONFIG.inboxDedupeWindowMs;
-  if (!Number.isFinite(Number(config.diffReviewLimit))) config.diffReviewLimit = DEFAULT_CONFIG.diffReviewLimit;
-  if (!Number.isFinite(Number(config.diffReviewMaxFiles))) config.diffReviewMaxFiles = DEFAULT_CONFIG.diffReviewMaxFiles;
-  if (!Number.isFinite(Number(config.diffReviewPatchMaxChars))) config.diffReviewPatchMaxChars = DEFAULT_CONFIG.diffReviewPatchMaxChars;
-  if (!Number.isFinite(Number(config.diffReviewTotalPatchMaxChars))) config.diffReviewTotalPatchMaxChars = DEFAULT_CONFIG.diffReviewTotalPatchMaxChars;
   if (!Number.isFinite(Number(config.auditLimit))) config.auditLimit = DEFAULT_CONFIG.auditLimit;
   if (!Number.isFinite(Number(config.pushDeviceLimit))) config.pushDeviceLimit = DEFAULT_CONFIG.pushDeviceLimit;
   config.agentCreation = normalizeAgentCreationConfig(config.agentCreation);
@@ -133,12 +120,6 @@ function ensureConfig() {
   config.staleThresholdMs = Math.max(0, Number(config.staleThresholdMs));
   config.commandTimeoutMs = Math.max(1000, Number(config.commandTimeoutMs));
   config.commandHistoryLimit = Math.max(1, Number(config.commandHistoryLimit));
-  config.inboxLimit = Math.max(1, Number(config.inboxLimit));
-  config.inboxDedupeWindowMs = Math.max(1000, Number(config.inboxDedupeWindowMs));
-  config.diffReviewLimit = Math.max(1, Number(config.diffReviewLimit));
-  config.diffReviewMaxFiles = Math.max(1, Number(config.diffReviewMaxFiles));
-  config.diffReviewPatchMaxChars = Math.max(256, Number(config.diffReviewPatchMaxChars));
-  config.diffReviewTotalPatchMaxChars = Math.max(256, Number(config.diffReviewTotalPatchMaxChars));
   config.auditLimit = Math.max(1, Number(config.auditLimit));
   config.pushDeviceLimit = Math.max(1, Number(config.pushDeviceLimit));
   config.push.ntfy.priority = Math.max(1, Math.min(5, Number(config.push.ntfy.priority)));
@@ -150,10 +131,6 @@ const config = ensureConfig();
 const sessions = new Map();
 const commandQueues = new Map();
 const commands = new Map();
-const inboxItems = new Map();
-const inboxDedupe = new Map();
-const approvals = new Map();
-const diffReviews = new Map();
 const pushDevices = new Map();
 const auditEvents = [];
 const watchers = new Set();
@@ -212,7 +189,6 @@ function publicSession(session) {
     lastEvent: session.lastEvent,
     health,
     commands: publicCommandsForSession(session.id),
-    inboxItems: publicInboxItemsForSession(session.id),
   };
 }
 
@@ -221,13 +197,6 @@ function publicCommandsForSession(sessionId) {
     .filter(command => command.sessionId === sessionId)
     .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))
     .map(publicCommand);
-}
-
-function publicInboxItemsForSession(sessionId) {
-  return Array.from(inboxItems.values())
-    .filter(item => item.sessionId === sessionId)
-    .sort((a, b) => Number(b.updatedAt || b.createdAt || 0) - Number(a.updatedAt || a.createdAt || 0))
-    .map(publicInboxItem);
 }
 
 function pushProviderStatus() {
@@ -252,10 +221,7 @@ function serverCapabilities() {
     schemaVersion: 2,
     eventEnvelope: true,
     health: true,
-    inbox: true,
     commandLifecycle: true,
-    approvals: true,
-    diffReviews: true,
     agentCreation: config.agentCreation.enabled,
     collaboration: true,
     pushDevices: true,
@@ -263,37 +229,6 @@ function serverCapabilities() {
     browse: true,
     attachments: true,
   };
-}
-
-function publicInboxItem(item) {
-  return {
-    id: item.id,
-    sessionId: item.sessionId || null,
-    type: item.type,
-    severity: item.severity,
-    title: item.title,
-    body: item.body,
-    createdAt: item.createdAt,
-    updatedAt: item.updatedAt,
-    readAt: item.readAt || null,
-    actionRef: item.actionRef || null,
-  };
-}
-
-function publicInboxItems() {
-  return Array.from(inboxItems.values())
-    .sort((a, b) => Number(b.updatedAt || b.createdAt || 0) - Number(a.updatedAt || a.createdAt || 0))
-    .map(publicInboxItem);
-}
-
-function pushScopeFromInboxType(type, severity) {
-  if (severity === "critical") return "critical";
-  if (type === "approval") return "approval";
-  if (type === "diff_review") return "diff_review";
-  if (type === "command_failure") return "command_failure";
-  if (type === "stale") return "stale";
-  if (type === "offline") return "offline";
-  return "inbox";
 }
 
 function publicPushDevice(device) {
@@ -373,68 +308,6 @@ function upsertPushDevice(input = {}) {
   return device;
 }
 
-function isPushProviderReadyForDevice(device) {
-  if (!config.push.enabled) return false;
-  if (device.provider !== config.push.provider) return false;
-  if (device.provider === "ntfy") return Boolean(config.push.ntfy.serverUrl && (device.token || config.push.ntfy.topic));
-  return false;
-}
-
-function shouldSendPushForScope(device, scope) {
-  if (!device.enabled) return false;
-  if (!isPushProviderReadyForDevice(device)) return false;
-  const scopes = Array.isArray(device.scopes) ? device.scopes : [];
-  return scopes.includes(scope) || scopes.includes("all");
-}
-
-function dispatchPushForInboxItem(item) {
-  if (!item || item.readAt) return;
-  const scope = pushScopeFromInboxType(item.type, item.severity);
-  for (const device of pushDevices.values()) {
-    if (!shouldSendPushForScope(device, scope)) continue;
-    void sendNtfyNotification(device, item, scope);
-  }
-}
-
-function sendNtfyNotification(device, item, scope) {
-  const base = config.push.ntfy.serverUrl;
-  const topic = encodeURIComponent(device.token || config.push.ntfy.topic);
-  let target;
-  try {
-    target = new URL(`${base}/${topic}`);
-  } catch {
-    return Promise.resolve(false);
-  }
-  const body = `${item.title}\n${item.body || ""}`.trim();
-  const client = target.protocol === "http:" ? http : https;
-  return new Promise(resolve => {
-    const request = client.request(target, {
-      method: "POST",
-      headers: {
-        "content-type": "text/plain; charset=utf-8",
-        "title": item.title,
-        "priority": String(config.push.ntfy.priority),
-        "tags": scope,
-        ...(config.push.ntfy.token ? { authorization: `Bearer ${config.push.ntfy.token}` } : {}),
-      },
-      timeout: 5000,
-    }, response => {
-      response.resume();
-      response.on("end", () => {
-        const ok = response.statusCode >= 200 && response.statusCode < 300;
-        if (!ok) recordAudit("push.send.failed", `ntfy push failed with ${response.statusCode}`, { provider: "ntfy", deviceId: device.deviceId, statusCode: response.statusCode, inboxId: item.id });
-        resolve(ok);
-      });
-    });
-    request.on("timeout", () => request.destroy(new Error("ntfy push timed out")));
-    request.on("error", error => {
-      recordAudit("push.send.failed", `ntfy push failed: ${error.message}`, { provider: "ntfy", deviceId: device.deviceId, inboxId: item.id });
-      resolve(false);
-    });
-    request.end(body);
-  });
-}
-
 function disablePushDevice(deviceId) {
   const id = normalizeDeviceId(deviceId);
   if (!id) throw new Error("deviceId required");
@@ -498,12 +371,6 @@ function removeSessionState(sessionId, reason = "removed") {
   for (const [id, command] of Array.from(commands.entries())) {
     if (command.sessionId === sessionId) commands.delete(id);
   }
-  for (const [id, item] of Array.from(inboxItems.entries())) {
-    if (item.sessionId === sessionId) inboxItems.delete(id);
-  }
-  for (const [key, id] of Array.from(inboxDedupe.entries())) {
-    if (!inboxItems.has(id)) inboxDedupe.delete(key);
-  }
   broadcast({ type: "session_removed", reason, sessionId, session: publicBefore });
   return publicBefore;
 }
@@ -523,7 +390,6 @@ function pruneStaleSessions() {
 function snapshot() {
   expireCommands();
   pruneStaleSessions();
-  refreshAttentionInboxItems();
   return {
     server: {
       pid: process.pid,
@@ -535,20 +401,12 @@ function snapshot() {
       schemaVersion: 2,
       staleThresholdMs: Number(config.staleThresholdMs),
       commandTimeoutMs: Number(config.commandTimeoutMs),
-      inboxLimit: Number(config.inboxLimit),
-      diffReviewLimit: Number(config.diffReviewLimit),
-      diffReviewMaxFiles: Number(config.diffReviewMaxFiles),
-      diffReviewPatchMaxChars: Number(config.diffReviewPatchMaxChars),
-      diffReviewTotalPatchMaxChars: Number(config.diffReviewTotalPatchMaxChars),
       capabilities: serverCapabilities(),
     },
     sessions: Array.from(sessions.values())
       .sort((a, b) => String(a.cwd).localeCompare(String(b.cwd)) || String(a.name || a.id).localeCompare(String(b.name || b.id)))
       .map(publicSession),
     commands: publicCommands(),
-    inboxItems: publicInboxItems(),
-    approvals: publicApprovals(),
-    diffReviews: publicDiffReviews(),
     pushDevices: publicPushDevices(),
     auditEvents: publicAuditEvents(),
     auditSummary: auditSummary(),
@@ -648,304 +506,12 @@ function publicCommands() {
     .map(publicCommand);
 }
 
-function publicApproval(approval) {
-  return {
-    id: approval.id,
-    sessionId: approval.sessionId || null,
-    title: approval.title,
-    body: approval.body,
-    risk: approval.risk,
-    choices: Array.isArray(approval.choices) ? approval.choices : ["approve", "reject"],
-    status: approval.status,
-    createdAt: approval.createdAt,
-    resolvedAt: approval.resolvedAt || null,
-    responseComment: approval.responseComment || null,
-  };
-}
-
-function publicApprovals() {
-  return Array.from(approvals.values())
-    .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))
-    .map(publicApproval);
-}
-
-function pendingApprovalCountForSession(sessionId) {
-  let count = 0;
-  for (const approval of approvals.values()) {
-    if (approval.sessionId === sessionId && approval.status === "pending") count++;
-  }
-  return count;
-}
-
 function pendingCommandCountForSession(sessionId) {
   let count = 0;
   for (const command of commands.values()) {
     if (command.sessionId === sessionId && PENDING_COMMAND_STATUSES.has(command.status)) count++;
   }
   return count;
-}
-
-function trimInboxItems() {
-  const limit = Number(config.inboxLimit);
-  if (inboxItems.size <= limit) return;
-  const oldest = Array.from(inboxItems.values()).sort((a, b) => Number(a.updatedAt || a.createdAt || 0) - Number(b.updatedAt || b.createdAt || 0));
-  for (const item of oldest) {
-    if (inboxItems.size <= limit) break;
-    if (item.readAt) inboxItems.delete(item.id);
-  }
-  for (const item of oldest) {
-    if (inboxItems.size <= limit) break;
-    inboxItems.delete(item.id);
-  }
-}
-
-function capTextWithFlag(value, max) {
-  const text = typeof value === "string" ? value : value == null ? "" : String(value);
-  const limit = Math.max(0, Number(max) || 0);
-  if (text.length <= limit) return { text, truncated: false, originalLength: text.length };
-  const marker = "\n...[truncated " + (text.length - limit) + " chars]";
-  if (limit <= marker.length) return { text: marker.slice(0, limit), truncated: true, originalLength: text.length };
-  return {
-    text: `${text.slice(0, limit - marker.length)}${marker}`,
-    truncated: true,
-    originalLength: text.length,
-  };
-}
-
-function sanitizeDiffPath(value) {
-  let raw = typeof value === "string" ? value : value == null ? "" : String(value);
-  raw = raw.split("\\").join("/").replace(/[\u0000-\u001f\u007f]/g, "").trim();
-  raw = raw.replace(/^[a-zA-Z]:\/+/, "").replace(/^\/+/, "");
-  const parts = [];
-  for (const part of raw.split("/")) {
-    if (!part || part === "." || part === "..") continue;
-    parts.push(part.replace(/[<>:"|?*]/g, "_"));
-  }
-  const sanitized = parts.join("/").slice(0, 240);
-  return sanitized || "unnamed-file";
-}
-
-function sanitizeDiffFile(input = {}, remainingChars = Number(config.diffReviewTotalPatchMaxChars)) {
-  const sourcePatch = typeof input.patch === "string" ? input.patch : input.patch == null ? "" : String(input.patch);
-  const patchCap = Math.max(0, Math.min(Number(config.diffReviewPatchMaxChars), remainingChars));
-  const capped = capTextWithFlag(sourcePatch, patchCap);
-  const originalLength = Number.isFinite(Number(input.originalLength)) ? Number(input.originalLength) : capped.originalLength;
-  const truncated = Boolean(input.truncated || capped.truncated || originalLength > patchCap);
-  const patchLength = Math.min(originalLength, patchCap);
-  return {
-    path: sanitizeDiffPath(input.path || input.file || input.filePath),
-    status: String(input.status || "modified").slice(0, 40),
-    additions: Math.max(0, Number(input.additions || 0) || 0),
-    deletions: Math.max(0, Number(input.deletions || 0) || 0),
-    patch: capped.text,
-    truncated,
-    originalLength,
-    patchLength,
-  };
-}
-
-function publicDiffFile(file) {
-  const { patchLength, ...publicFile } = file;
-  return publicFile;
-}
-
-function publicDiffReview(review) {
-  return {
-    id: review.id,
-    sessionId: review.sessionId || null,
-    title: review.title,
-    status: review.status,
-    files: review.files.map(publicDiffFile),
-    createdAt: review.createdAt,
-    updatedAt: review.updatedAt,
-    resolvedAt: review.resolvedAt || null,
-    responseComment: review.responseComment || null,
-    responseAction: review.responseAction || null,
-    truncated: Boolean(review.truncated),
-  };
-}
-
-function publicDiffReviews() {
-  return Array.from(diffReviews.values())
-    .sort((a, b) => Number(b.updatedAt || b.createdAt || 0) - Number(a.updatedAt || a.createdAt || 0))
-    .map(publicDiffReview);
-}
-
-function trimDiffReviews() {
-  const limit = Number(config.diffReviewLimit);
-  if (diffReviews.size <= limit) return;
-  const oldest = Array.from(diffReviews.values()).sort((a, b) => Number(a.updatedAt || a.createdAt || 0) - Number(b.updatedAt || b.createdAt || 0));
-  for (const review of oldest) {
-    if (diffReviews.size <= limit) break;
-    if (review.status !== "pending") diffReviews.delete(review.id);
-  }
-  for (const review of oldest) {
-    if (diffReviews.size <= limit) break;
-    diffReviews.delete(review.id);
-  }
-}
-
-function upsertDiffReviewFromEvent(event) {
-  const payload = event.payload || {};
-  const input = payload.diffReview && typeof payload.diffReview === "object" ? payload.diffReview : payload;
-  const id = String(input.id || payload.diffReviewId || `diff_${crypto.randomUUID()}`);
-  const now = Date.now();
-  let remaining = Number(config.diffReviewTotalPatchMaxChars);
-  const rawFiles = Array.isArray(input.files) ? input.files : [];
-  const files = [];
-  let truncated = rawFiles.length > Number(config.diffReviewMaxFiles);
-  for (const rawFile of rawFiles.slice(0, Number(config.diffReviewMaxFiles))) {
-    const file = sanitizeDiffFile(rawFile && typeof rawFile === "object" ? rawFile : {}, remaining);
-    remaining = Math.max(0, remaining - file.patchLength);
-    truncated = truncated || file.truncated || remaining <= 0;
-    files.push(file);
-  }
-  const existing = diffReviews.get(id);
-  const review = {
-    id,
-    sessionId: event.sessionId,
-    title: String(input.title || "Review proposed changes").slice(0, 200),
-    status: String(input.status || existing?.status || "pending"),
-    files,
-    createdAt: Number(input.createdAt || existing?.createdAt || event.timestamp || now),
-    updatedAt: Number(input.updatedAt || now),
-    resolvedAt: existing?.resolvedAt || null,
-    responseComment: existing?.responseComment || null,
-    responseAction: existing?.responseAction || null,
-    truncated,
-  };
-  diffReviews.set(id, review);
-  trimDiffReviews();
-  upsertInboxItem({
-    sessionId: event.sessionId,
-    type: "diff_review",
-    severity: String(input.severity || "warning"),
-    title: review.title,
-    body: `${sessionLabel(event.sessionId)} has ${files.length} file${files.length === 1 ? "" : "s"} ready for review${truncated ? " (truncated)" : ""}.`,
-    actionRef: { kind: "diff_review", id },
-    dedupeKey: `${event.sessionId || "global"}:diff_review:${id}`,
-  });
-  broadcast({ type: "diff_review.updated", diffReview: publicDiffReview(review) });
-  return review;
-}
-
-function respondToDiffReview(id, body = {}) {
-  const review = diffReviews.get(String(id));
-  if (!review) return undefined;
-  const action = String(body.action || body.status || "").trim();
-  const allowed = new Set(["approve", "approved", "request_changes", "changes_requested", "comment"]);
-  if (!allowed.has(action)) throw new Error("unsupported diff review action");
-  const status = action === "approve" || action === "approved" ? "approved" : action === "comment" ? "pending" : "changes_requested";
-  if (review.status !== "pending") throw new Error("diff review already resolved");
-  const now = Date.now();
-  const comment = typeof body.comment === "string" ? capString(body.comment, 4000) : "";
-  review.status = status;
-  review.updatedAt = now;
-  if (status !== "pending") review.resolvedAt = now;
-  review.responseAction = action;
-  review.responseComment = comment || null;
-  const command = createCommand(review.sessionId, "diff_review_response", {
-    diffReviewId: review.id,
-    action,
-    status,
-    comment,
-  });
-  markInboxForAction("diff_review", review.id, status === "pending" ? undefined : now);
-  broadcast({ type: "diff_review.updated", diffReview: publicDiffReview(review), command: publicCommand(command) });
-  return { review, command };
-}
-
-function markInboxForAction(kind, id, readAt) {
-  const now = Date.now();
-  for (const item of inboxItems.values()) {
-    if (item.actionRef?.kind !== kind || item.actionRef?.id !== id) continue;
-    if (readAt !== undefined) item.readAt = readAt;
-    item.updatedAt = now;
-    broadcast({ type: "inbox.updated", inboxItem: publicInboxItem(item) });
-  }
-}
-
-function inboxDedupeKey({ sessionId, type, actionRef, dedupeKey }) {
-  if (dedupeKey) return String(dedupeKey);
-  if (actionRef?.kind && actionRef?.id) return `${sessionId || "global"}:${type}:${actionRef.kind}:${actionRef.id}`;
-  const bucket = Math.floor(Date.now() / Number(config.inboxDedupeWindowMs));
-  return `${sessionId || "global"}:${type}:${bucket}`;
-}
-
-function upsertInboxItem(input = {}) {
-  const now = Date.now();
-  const type = String(input.type || "system");
-  const key = inboxDedupeKey({ ...input, type });
-  const existingId = inboxDedupe.get(key);
-  const existing = existingId ? inboxItems.get(existingId) : undefined;
-  const sessionId = typeof input.sessionId === "string" ? input.sessionId : undefined;
-  const item = existing || {
-    id: input.id || `inbox_${crypto.randomUUID()}`,
-    sessionId,
-    type,
-    severity: String(input.severity || "info"),
-    title: String(input.title || "Hub notification"),
-    body: String(input.body || ""),
-    createdAt: Number(input.createdAt || now),
-    updatedAt: Number(input.updatedAt || now),
-    readAt: input.readAt || null,
-    actionRef: input.actionRef || null,
-  };
-  let changed = !existing;
-  if (existing) {
-    const nextSeverity = String(input.severity || item.severity || "info");
-    const nextTitle = String(input.title || item.title || "Hub notification");
-    const nextBody = String(input.body || item.body || "");
-    const nextActionRef = input.actionRef || item.actionRef;
-    const nextReadAt = input.readAt !== undefined ? input.readAt : item.readAt;
-    changed = item.severity !== nextSeverity || item.title !== nextTitle || item.body !== nextBody || JSON.stringify(item.actionRef || null) !== JSON.stringify(nextActionRef || null) || item.readAt !== nextReadAt;
-    item.severity = nextSeverity;
-    item.title = nextTitle;
-    item.body = nextBody;
-    item.actionRef = nextActionRef || null;
-    item.readAt = nextReadAt || null;
-    if (changed) item.updatedAt = Number(input.updatedAt || now);
-  }
-  inboxItems.set(item.id, item);
-  inboxDedupe.set(key, item.id);
-  trimInboxItems();
-  if (changed) {
-    broadcast({ type: "inbox.updated", inboxItem: publicInboxItem(item) });
-    dispatchPushForInboxItem(item);
-  }
-  return item;
-}
-
-function markInboxItemsRead(ids = []) {
-  const now = Date.now();
-  const updated = [];
-  for (const id of ids) {
-    const item = inboxItems.get(String(id));
-    if (!item) continue;
-    if (!item.readAt) item.readAt = now;
-    item.updatedAt = now;
-    updated.push(item);
-    broadcast({ type: "inbox.updated", inboxItem: publicInboxItem(item) });
-  }
-  return updated;
-}
-
-function sessionLabel(sessionId) {
-  const session = sessionId ? sessions.get(sessionId) : undefined;
-  return session?.name || session?.cwd?.split(/[\\/]/).filter(Boolean).pop() || sessionId || "agent";
-}
-
-function createApprovalInboxItem(approval) {
-  if (!approval) return undefined;
-  return upsertInboxItem({
-    sessionId: approval.sessionId,
-    type: "approval",
-    severity: approval.risk === "high" ? "critical" : "warning",
-    title: approval.title || "Approval needed",
-    body: approval.body || `${sessionLabel(approval.sessionId)} requested approval.`,
-    actionRef: { kind: "approval", id: approval.id },
-    dedupeKey: `${approval.sessionId || "global"}:approval:${approval.id}`,
-  });
 }
 
 function targetSessionIds(body = {}) {
@@ -991,18 +557,6 @@ function collaborationHistoryItem(message, targetSessionId) {
   });
 }
 
-function createCollaborationInboxItem(message, sessionId) {
-  return upsertInboxItem({
-    sessionId,
-    type: "collaboration",
-    severity: message.severity,
-    title: message.title,
-    body: message.text,
-    actionRef: { kind: "collaboration", id: message.id },
-    dedupeKey: `${sessionId}:collaboration:${message.id}`,
-  });
-}
-
 function routeCollaborationMessage(body = {}) {
   const text = collaborationMessageText(body);
   const sessionIds = targetSessionIds(body);
@@ -1020,7 +574,6 @@ function routeCollaborationMessage(body = {}) {
     createdAt: now,
   };
   const commandsCreated = [];
-  const inboxCreated = [];
   for (const sessionId of sessionIds) {
     const session = getOrCreateSession(sessionId);
     const historyItem = collaborationHistoryItem(message, sessionId);
@@ -1028,8 +581,6 @@ function routeCollaborationMessage(body = {}) {
     if (idx >= 0) session.history[idx] = historyItem;
     else session.history.push(historyItem);
     session.history = session.history.slice(-Number(config.historyLimit));
-    const inboxItem = createCollaborationInboxItem(message, sessionId);
-    inboxCreated.push(inboxItem);
     const command = createCommand(sessionId, "collaboration_message", {
       collaborationId: message.id,
       text: message.text,
@@ -1054,112 +605,8 @@ function routeCollaborationMessage(body = {}) {
     type: "collaboration.message.created",
     collaborationMessage: message,
     commands: commandsCreated.map(publicCommand),
-    inboxItems: inboxCreated.map(publicInboxItem),
   });
-  return { message, commands: commandsCreated, inboxItems: inboxCreated };
-}
-
-function normalizeApprovalRecord(event) {
-  const payload = event.payload || {};
-  const source = payload.approval && typeof payload.approval === "object" ? payload.approval : payload;
-  const now = Date.now();
-  const id = String(source.id || payload.approvalId || event.id || `approval_${crypto.randomUUID()}`);
-  const sessionId = typeof source.sessionId === "string" ? source.sessionId : event.sessionId;
-  const choices = Array.isArray(source.choices) && source.choices.length
-    ? source.choices.map(choice => String(choice)).filter(Boolean)
-    : ["approve", "reject"];
-  return {
-    id,
-    sessionId,
-    title: String(source.title || "Approval needed"),
-    body: String(source.body || source.summary || "Agent requested operator approval."),
-    risk: String(source.risk || "medium"),
-    choices: choices.length ? choices : ["approve", "reject"],
-    status: String(source.status || "pending"),
-    createdAt: Number(source.createdAt || event.timestamp || now),
-    resolvedAt: source.resolvedAt ? Number(source.resolvedAt) : null,
-    responseComment: typeof source.responseComment === "string" ? source.responseComment : null,
-  };
-}
-
-function upsertApprovalFromEvent(event) {
-  const next = normalizeApprovalRecord(event);
-  if (!next.sessionId) return undefined;
-  const existing = approvals.get(next.id);
-  const approval = existing ? { ...existing, ...next, createdAt: existing.createdAt || next.createdAt } : next;
-  approvals.set(approval.id, approval);
-  if (approval.status === "pending") createApprovalInboxItem(approval);
-  broadcast({ type: "approval.updated", sessionId: approval.sessionId, approval: publicApproval(approval) });
-  return approval;
-}
-
-function commandDisplayType(command) {
-  return String(command?.type || "command").replace(/_/g, " ");
-}
-
-function createToolErrorInbox(sessionId, tool = {}, error) {
-  const label = sessionLabel(sessionId);
-  const name = tool.name || "tool";
-  const id = tool.id || `${name}:${Date.now()}`;
-  return upsertInboxItem({
-    sessionId,
-    type: "tool_error",
-    severity: "error",
-    title: "Tool failed",
-    body: `${name} failed for ${label}${error ? `: ${error}` : ""}`,
-    actionRef: { kind: "session", id: sessionId },
-    dedupeKey: `${sessionId}:tool_error:${id}`,
-  });
-}
-
-function createHealthInboxForSession(session) {
-  if (!session?.id) return;
-  const health = deriveSessionHealth(session);
-  const label = sessionLabel(session.id);
-  if (health.state === "offline") {
-    upsertInboxItem({
-      sessionId: session.id,
-      type: "offline",
-      severity: "warning",
-      title: "Agent offline",
-      body: `${label} is offline.`,
-      actionRef: { kind: "session", id: session.id },
-      dedupeKey: `${session.id}:offline`,
-    });
-  } else if (health.state === "stale") {
-    upsertInboxItem({
-      sessionId: session.id,
-      type: "stale",
-      severity: "warning",
-      title: "Agent stale",
-      body: `${label} has missed heartbeat threshold.`,
-      actionRef: { kind: "session", id: session.id },
-      dedupeKey: `${session.id}:stale`,
-    });
-  }
-}
-
-function refreshAttentionInboxItems() {
-  pruneStaleSessions();
-  for (const session of sessions.values()) createHealthInboxForSession(session);
-}
-
-function processInboxForEvent(event, session) {
-  const payload = event.payload || {};
-  const type = event.type || "";
-  if ((type === "session.tool_end" || event.legacyType === "tool_end") && payload.tool && (payload.tool.isError || payload.tool.status === "error")) {
-    createToolErrorInbox(event.sessionId, payload.tool, payload.error || payload.tool.error);
-  }
-  if (type === "approval.requested" || type === "approval_requested") {
-    upsertApprovalFromEvent(event);
-  }
-  if (type === "diff_review.requested" || type === "diff_review_requested") {
-    const payload = event.payload || {};
-    const record = payload.diffReview && typeof payload.diffReview === "object" ? payload.diffReview : payload;
-    const id = String(record.id || payload.diffReviewId || "");
-    if (!event.diffReview && id && !diffReviews.has(id)) upsertDiffReviewFromEvent(event);
-  }
-  createHealthInboxForSession(session);
+  return { message, commands: commandsCreated };
 }
 
 function broadcastCommandUpdate(command, reason) {
@@ -1201,7 +648,6 @@ function markCommandStatus(commandOrId, status, options = {}) {
   if (status === "applied" || status === "failed" || status === "expired") command.finishedAt = command.finishedAt || now;
   if (typeof options.error === "string" && options.error) command.error = options.error;
   commands.set(command.id, command);
-  if (status === "failed" || status === "expired") createCommandFailureInbox(command, status);
   if (previous !== command.status || options.error) broadcastCommandUpdate(command, options.reason || status);
   trimCommands();
   return command;
@@ -1214,21 +660,6 @@ function expireCommands() {
       markCommandStatus(command, "expired", { error: "command expired", reason: "expired" });
     }
   }
-}
-
-function createCommandFailureInbox(command, reason = "failed") {
-  if (!command || !command.sessionId) return undefined;
-  const label = sessionLabel(command.sessionId);
-  const actionRef = { kind: "command", id: command.id };
-  return upsertInboxItem({
-    sessionId: command.sessionId,
-    type: "command_failure",
-    severity: "error",
-    title: reason === "expired" ? "Command expired" : "Command failed",
-    body: `${commandDisplayType(command)} for ${label}: ${command.error || reason}`,
-    actionRef,
-    dedupeKey: `${command.sessionId}:command_failure:${command.id}`,
-  });
 }
 
 function createCommand(sessionId, type, payload = {}) {
@@ -1253,47 +684,6 @@ function createCommand(sessionId, type, payload = {}) {
   trimCommands();
   broadcastCommandUpdate(command, "queued");
   return command;
-}
-
-function approvalResponseValue(body = {}) {
-  return String(body.response || body.choice || body.decision || body.action || "").trim().toLowerCase();
-}
-
-function respondToApproval(approvalId, body = {}) {
-  const approval = approvals.get(String(approvalId));
-  if (!approval) return undefined;
-  if (approval.status !== "pending") throw new Error("approval already resolved");
-  const response = approvalResponseValue(body);
-  if (response !== "approve" && response !== "reject") throw new Error("response must be approve or reject");
-  if (Array.isArray(approval.choices) && approval.choices.length && !approval.choices.includes(response)) {
-    throw new Error("response not allowed for approval");
-  }
-  const comment = typeof body.comment === "string" ? body.comment : typeof body.responseComment === "string" ? body.responseComment : "";
-  const now = Date.now();
-  approval.status = response === "approve" ? "approved" : "rejected";
-  approval.resolvedAt = now;
-  approval.responseComment = comment || null;
-  approvals.set(approval.id, approval);
-  const command = createCommand(approval.sessionId, "approval_response", {
-    approvalId: approval.id,
-    response,
-    approved: response === "approve",
-    comment,
-    title: approval.title,
-    risk: approval.risk,
-  });
-  upsertInboxItem({
-    sessionId: approval.sessionId,
-    type: "approval",
-    severity: response === "approve" ? "info" : "warning",
-    title: response === "approve" ? "Approval approved" : "Approval rejected",
-    body: comment || approval.body,
-    readAt: now,
-    actionRef: { kind: "approval", id: approval.id },
-    dedupeKey: `${approval.sessionId || "global"}:approval:${approval.id}`,
-  });
-  broadcast({ type: "approval.updated", sessionId: approval.sessionId, approval: publicApproval(approval), command: publicCommand(command) });
-  return { approval, command };
 }
 
 function commandIdFromPayload(payload = {}) {
@@ -1522,11 +912,6 @@ function applyEvent(event) {
   if (!event?.sessionId) return undefined;
   const session = touchSession(getOrCreateSession(event.sessionId));
   const legacyEvent = { ...event.payload, type: event.legacyType || event.type };
-  if (event.type === "diff_review.requested" || event.legacyType === "diff_review_requested") {
-    const review = upsertDiffReviewFromEvent(event);
-    event.diffReview = review;
-    legacyEvent.diffReview = review;
-  }
   if (event.type === "session.registered") {
     const info = event.payload.session && typeof event.payload.session === "object" ? event.payload.session : event.payload;
     Object.assign(session, {
@@ -1552,7 +937,6 @@ function applyEvent(event) {
     applyCommandResult(event);
   }
   session.lastEvent = event;
-  processInboxForEvent(event, session);
   return session;
 }
 
@@ -1572,15 +956,9 @@ function deriveSessionHealth(session) {
   const hasCommandFailure = recentLastEvent && session.lastEvent?.type === "command.result" && session.lastEvent?.payload?.applied === false;
   const errorPayload = session.lastEvent?.payload || {};
   const hasAgentError = recentLastEvent && (session.lastEvent?.severity === "error" || (errorPayload.error && session.lastEvent?.type !== "command.queued"));
-  const pendingActionType = recentLastEvent ? session.lastEvent?.type : undefined;
-  const hasPendingApproval = pendingApprovalCountForSession(session.id) > 0;
-  const sessionDiffReviews = Array.from(diffReviews.values()).filter(review => review.sessionId === session.id);
-  const hasPendingDiff = sessionDiffReviews.some(review => review.status === "pending") || (!sessionDiffReviews.length && (pendingActionType === "diff_review.requested" || pendingActionType === "diff_review_requested"));
 
   if (explicitOffline) attentionReasons.push("offline");
   if (isStale) attentionReasons.push("stale");
-  if (hasPendingApproval) attentionReasons.push("approval_pending");
-  if (hasPendingDiff) attentionReasons.push("diff_review_pending");
   if (hasToolError) attentionReasons.push("tool_error");
   if (hasCommandFailure) attentionReasons.push("command_failure");
   else if (hasAgentError && !hasToolError) attentionReasons.push("agent_error");
@@ -1589,7 +967,7 @@ function deriveSessionHealth(session) {
   if (!session.id) state = "unknown";
   else if (explicitOffline) state = "offline";
   else if (isStale) state = "stale";
-  else if (hasPendingApproval || hasPendingDiff || session.status === "blocked") state = "blocked";
+  else if (session.status === "blocked") state = "blocked";
   else if (hasToolError || hasCommandFailure || hasAgentError) state = "error";
   else if (runningToolCount > 0 || session.status === "thinking" || session.liveMessage) state = "active";
 
@@ -1890,15 +1268,6 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    if (req.method === "POST" && url.pathname === "/api/v2/inbox/read") {
-      const body = await readBody(req);
-      const ids = Array.isArray(body.ids) ? body.ids : body.id ? [body.id] : [];
-      if (!ids.length) throw new Error("ids required");
-      const updated = markInboxItemsRead(ids);
-      sendJson(res, 200, { ok: true, inboxItems: updated.map(publicInboxItem) });
-      return;
-    }
-
     if (req.method === "GET" && url.pathname === "/api/v2/push/devices") {
       sendJson(res, 200, { ok: true, pushDevices: publicPushDevices(), provider: pushProviderStatus() });
       return;
@@ -1937,30 +1306,6 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    const approvalRespondMatch = url.pathname.match(/^\/api\/v2\/approvals\/([^/]+)\/respond$/);
-    if (req.method === "POST" && approvalRespondMatch) {
-      const body = await readBody(req);
-      const result = respondToApproval(decodeURIComponent(approvalRespondMatch[1]), body);
-      if (!result) {
-        sendJson(res, 404, { error: "approval not found" });
-        return;
-      }
-      sendJson(res, 200, { ok: true, approval: publicApproval(result.approval), command: publicCommand(result.command), commandId: result.command.id });
-      return;
-    }
-
-    const diffRespondMatch = url.pathname.match(/^\/api\/v2\/diff-reviews\/([^/]+)\/respond$/);
-    if (req.method === "POST" && diffRespondMatch) {
-      const body = await readBody(req);
-      const result = respondToDiffReview(decodeURIComponent(diffRespondMatch[1]), body);
-      if (!result) {
-        sendJson(res, 404, { error: "diff review not found" });
-        return;
-      }
-      sendJson(res, 200, { ok: true, diffReview: publicDiffReview(result.review), command: publicCommand(result.command) });
-      return;
-    }
-
     if (req.method === "POST" && url.pathname === "/api/v2/collaboration/messages") {
       const body = await readBody(req);
       const result = routeCollaborationMessage(body);
@@ -1968,7 +1313,6 @@ const server = http.createServer(async (req, res) => {
         ok: true,
         collaborationMessage: result.message,
         commands: result.commands.map(publicCommand),
-        inboxItems: result.inboxItems.map(publicInboxItem),
       });
       return;
     }
