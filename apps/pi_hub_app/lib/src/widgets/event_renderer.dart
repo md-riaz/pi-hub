@@ -12,6 +12,7 @@ class EventRenderer extends StatelessWidget {
   final bool isStreaming;
   final ValueChanged<EditEvent>? onViewDiff;
   final ValueChanged<String>? onQuickReply;
+  final HubItem? pairedToolResult;
 
   const EventRenderer({
     super.key,
@@ -19,16 +20,33 @@ class EventRenderer extends StatelessWidget {
     this.isStreaming = false,
     this.onViewDiff,
     this.onQuickReply,
+    this.pairedToolResult,
   });
 
   @override
   Widget build(BuildContext context) {
     switch (event.kind) {
       case 'user':
-        return UserBubble(text: event.text, time: _formatTime(event.timestamp));
+        return UserBubble(
+          text: event.text,
+          time: _formatTime(event.timestamp),
+          status: event.metadata['commandStatus']?.toString(),
+        );
       case 'assistant':
         final toolCallCard = _toolCallCard(event);
         if (toolCallCard != null) return toolCallCard;
+        if (event.text.trim().isEmpty &&
+            event.metadata['errorMessage'] != null) {
+          return _terminalCard(
+            event,
+            title: 'Assistant error',
+            status: 'error',
+            summary: event.metadata['errorMessage'].toString(),
+          );
+        }
+        if (event.text.trim().isEmpty) {
+          return _terminalCard(event, title: 'Assistant event', status: 'done');
+        }
         return AssistantBubble(text: event.text, streaming: isStreaming);
       case 'tool':
         return _toolEventCard(event);
@@ -71,20 +89,35 @@ class EventRenderer extends StatelessWidget {
   Widget? _toolCallCard(HubItem event) {
     final toolCalls = _parseToolCalls(event.text);
     if (toolCalls.isNotEmpty) {
+      final paired = pairedToolResult;
+      final isError = paired?.metadata['isError'] == true;
+      final status = paired == null ? 'running' : (isError ? 'error' : 'done');
+      final items = toolCalls.map((call) {
+        final result = paired?.text.trim() ?? '';
+        return {
+          ...call,
+          'meta': paired == null ? 'running' : (isError ? 'error' : 'done'),
+          if (result.isNotEmpty) 'result': result,
+        };
+      }).toList();
       return ToolGroupCard(
         event: HubItem(
           id: '${event.id}-tool-calls',
           kind: 'tool',
           role: 'tool_call',
           timestamp: event.timestamp,
-          text: event.text,
+          text: paired == null || paired.text.isEmpty
+              ? event.text
+              : '${event.text}\n\n${paired.text}',
           metadata: {
             'title': toolCalls.length == 1
-                ? 'Tool call: ${toolCalls.first['tool']}'
-                : 'Tool calls',
-            'collapsedLabel':
-                '${toolCalls.length} call${toolCalls.length == 1 ? '' : 's'}',
-            'items': toolCalls,
+                ? 'Tool: ${toolCalls.first['tool']}'
+                : 'Tools',
+            'status': status,
+            'collapsedLabel': paired == null
+                ? '${toolCalls.length} running'
+                : '${toolCalls.length} completed',
+            'items': items,
           },
         ),
       );

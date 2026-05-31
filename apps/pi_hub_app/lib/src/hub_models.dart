@@ -288,6 +288,7 @@ class HubSession {
     required this.tools,
     required this.contextUsage,
     required this.availableModels,
+    this.slashCommands = const [],
     this.startedAt,
     this.lastSeen,
     this.lastEvent = const {},
@@ -310,6 +311,7 @@ class HubSession {
   final List<HubTool> tools;
   final ContextUsage? contextUsage;
   final List<HubModel> availableModels;
+  final List<HubSlashCommand> slashCommands;
   final Map<String, dynamic> lastEvent;
   final HubHealth? health;
   final List<HubCommand> commands;
@@ -330,13 +332,7 @@ class HubSession {
   bool isActive({int? staleThresholdMs, int? nowMs}) {
     if (!online) return false;
     final state = health?.state.toLowerCase();
-    if (state == 'offline' || state == 'stale') return false;
-    final lastSeenMs = lastSeen;
-    final threshold = staleThresholdMs;
-    if (threshold != null && threshold > 0 && lastSeenMs != null) {
-      final age = (nowMs ?? DateTime.now().millisecondsSinceEpoch) - lastSeenMs;
-      if (age > threshold) return false;
-    }
+    if (state == 'offline') return false;
     return true;
   }
 
@@ -358,6 +354,9 @@ class HubSession {
       availableModels: _mapList(
         json['availableModels'],
       ).map(HubModel.fromJson).toList(),
+      slashCommands: _mapList(
+        json['slashCommands'],
+      ).map(HubSlashCommand.fromJson).toList(),
       lastEvent: _asMap(json['lastEvent']),
       health: _optionalMap(json['health'], HubHealth.fromJson),
       commands: _mapList(json['commands']).map(HubCommand.fromJson).toList(),
@@ -386,6 +385,7 @@ class HubSession {
       tools: tools,
       contextUsage: contextUsage,
       availableModels: availableModels,
+      slashCommands: slashCommands,
       lastEvent: lastEvent,
       health: health,
       commands: commands ?? this.commands,
@@ -440,6 +440,22 @@ class HubModel {
       id: json['id']?.toString() ?? '',
       name: json['name']?.toString() ?? json['id']?.toString() ?? '',
       provider: json['provider']?.toString(),
+    );
+  }
+}
+
+class HubSlashCommand {
+  HubSlashCommand({required this.name, this.description});
+
+  final String name;
+  final String? description;
+
+  String get invocation => name.startsWith('/') ? name : '/$name';
+
+  factory HubSlashCommand.fromJson(Map<String, dynamic> json) {
+    return HubSlashCommand(
+      name: json['name']?.toString() ?? '',
+      description: json['description']?.toString(),
     );
   }
 }

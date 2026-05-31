@@ -200,17 +200,30 @@ async function getJson(config: PiHubConfig, path: string): Promise<any> {
 	return response.json();
 }
 
+function safeJson(value: unknown): string {
+	try {
+		return JSON.stringify(value, null, 2);
+	} catch {
+		return String(value);
+	}
+}
+
 function contentToText(content: unknown): string {
 	if (typeof content === "string") return content;
-	if (!Array.isArray(content)) return "";
+	if (content === undefined || content === null) return "";
+	if (!Array.isArray(content)) return safeJson(content);
 	return content.map((part) => {
-		if (!part || typeof part !== "object") return "";
+		if (typeof part === "string") return part;
+		if (!part || typeof part !== "object") return String(part ?? "");
 		const item = part as Record<string, unknown>;
 		if (item.type === "text" && typeof item.text === "string") return item.text;
 		if (item.type === "thinking" && typeof item.thinking === "string") return `[thinking]\n${item.thinking}`;
-		if (item.type === "toolCall") return `[tool_call ${String(item.name || "tool")}] ${JSON.stringify(item.arguments || {})}`;
+		if (item.type === "toolCall") return `[tool_call ${String(item.name || "tool")}] ${safeJson(item.arguments || {})}`;
+		if (item.type === "toolResult") return contentToText(item.content ?? item.result ?? item.text);
 		if (item.type === "image") return "[image]";
-		return "";
+		if (typeof item.text === "string") return item.text;
+		if (typeof item.content === "string" || Array.isArray(item.content)) return contentToText(item.content);
+		return `[${String(item.type || "content")}] ${safeJson(item)}`;
 	}).filter(Boolean).join("\n");
 }
 
@@ -222,7 +235,7 @@ function messageToItem(entryOrMessage: any, fallbackId?: string): HubItem | null
 	const role = String(message.role || entryOrMessage?.type || "message");
 
 	if (role === "user") {
-		return { id, kind: "user", role, timestamp, text: contentToText(message.content) };
+		return { id, kind: "user", role, timestamp, text: contentToText(message.content), metadata: { rawContent: message.content } };
 	}
 	if (role === "assistant") {
 		return {
@@ -237,6 +250,7 @@ function messageToItem(entryOrMessage: any, fallbackId?: string): HubItem | null
 				stopReason: message.stopReason,
 				usage: message.usage,
 				errorMessage: message.errorMessage,
+				rawContent: message.content,
 			},
 		};
 	}
@@ -288,7 +302,14 @@ function messageToItem(entryOrMessage: any, fallbackId?: string): HubItem | null
 			metadata: { customType: entryOrMessage.customType, display: entryOrMessage.display, details: entryOrMessage.details },
 		};
 	}
-	return null;
+	return {
+		id,
+		kind: "custom",
+		role,
+		timestamp,
+		text: contentToText(message.content ?? entryOrMessage?.content ?? entryOrMessage),
+		metadata: { rawEntry: entryOrMessage, rawMessage: message },
+	};
 }
 
 function sessionHistory(ctx: ExtensionContext, limit: number): HubItem[] {
@@ -322,7 +343,18 @@ function clientMetadata() {
 	};
 }
 
-function currentSessionInfo(ctx: ExtensionContext, config: PiHubConfig, status: string) {
+function slashCommandSummaries(pi: ExtensionAPI): Array<{ name: string; description?: string }> {
+	try {
+		return pi.getCommands().map((command: any) => ({
+			name: String(command.invocationName || command.name || ""),
+			description: typeof command.description === "string" ? command.description : undefined,
+		})).filter(command => command.name);
+	} catch {
+		return [];
+	}
+}
+
+function currentSessionInfo(ctx: ExtensionContext, config: PiHubConfig, status: string, slashCommands: Array<{ name: string; description?: string }> = []) {
 	return {
 		id: ctx.sessionManager.getSessionId(),
 		name: ctx.sessionManager.getSessionName(),
@@ -333,6 +365,7 @@ function currentSessionInfo(ctx: ExtensionContext, config: PiHubConfig, status: 
 		status,
 		contextUsage: ctx.getContextUsage?.(),
 		availableModels: availableModelSummaries(ctx),
+		slashCommands,
 		history: sessionHistory(ctx, config.historyLimit),
 		...clientMetadata(),
 	};
@@ -508,6 +541,7 @@ export default function piHubExtension(pi: ExtensionAPI) {
 				status: currentStatus(),
 				contextUsage: ctx.getContextUsage?.(),
 				availableModels: availableModelSummaries(ctx),
+				slashCommands: slashCommandSummaries(pi),
 				...clientMetadata(),
 			});
 		} catch {
@@ -521,8 +555,9 @@ export default function piHubExtension(pi: ExtensionAPI) {
 		try {
 			await ensureServer(config);
 			serverOk = true;
-			await post(config, "/api/register", { session: { ...currentSessionInfo(ctx, config, currentStatus()), startedAt }, ...clientMetadata() });
+			await post(config, "/api/register", { session: { ...currentSessionInfo(ctx, config, currentStatus(), slashCommandSummaries(pi)), startedAt }, ...clientMetadata() });
 			setUiStatus("Hub ✓");
+			void pollCommands();
 		} catch (error) {
 			serverOk = false;
 			setUiStatus("Hub ✗");
@@ -530,6 +565,15 @@ export default function piHubExtension(pi: ExtensionAPI) {
 				ctx.ui.notify(`Pi Hub unavailable: ${error instanceof Error ? error.message : String(error)}`, "warning");
 			}
 		}
+	}
+
+	function startBackgroundLoops(): void {
+		if (presenceTimer) clearInterval(presenceTimer);
+		if (pollTimer) clearInterval(pollTimer);
+		presenceTimer = setInterval(() => void sendPresence(), 10_000);
+		pollTimer = setInterval(() => void pollCommands(), config.pollIntervalMs);
+		void sendPresence();
+		void pollCommands();
 	}
 
 	async function pollCommands(): Promise<void> {
@@ -543,6 +587,19 @@ export default function piHubExtension(pi: ExtensionAPI) {
 					if (command?.type === "user_message") {
 						if (typeof command.text !== "string" || !command.text.trim()) throw new Error("text required");
 						await Promise.resolve(pi.sendUserMessage(command.text));
+						await sendEvent({
+							type: "input",
+							item: {
+								id: `command-input-${command.id}`,
+								kind: "user",
+								role: "user",
+								timestamp: Date.now(),
+								text: command.text,
+								metadata: { source: "mobile", commandId: command.id },
+							},
+							source: "mobile",
+							commandId: command.id,
+						});
 						await sendCommandResult(command, true);
 						continue;
 					}
@@ -611,8 +668,7 @@ export default function piHubExtension(pi: ExtensionAPI) {
 		toolNames.clear();
 		if (connectTimer) clearTimeout(connectTimer);
 		connectTimer = setTimeout(() => void register(ctx), 0);
-		presenceTimer = setInterval(() => void sendPresence(), 10_000);
-		pollTimer = setInterval(() => void pollCommands(), config.pollIntervalMs);
+		startBackgroundLoops();
 	});
 
 	pi.on("session_shutdown", async () => {
@@ -713,6 +769,7 @@ export default function piHubExtension(pi: ExtensionAPI) {
 				try {
 					await ensureServer(config);
 					serverOk = true;
+					startBackgroundLoops();
 					await register(ctx);
 					ctx.ui.notify(`Pi Hub started.\n\n${networkHint(config)}`, "info");
 				} catch (error) {

@@ -92,11 +92,60 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 
   List<HubItem> get _items {
     final items = List<HubItem>.from(widget.session.history);
+    for (final command in widget.session.commands) {
+      if (command.type != 'user_message' || !command.isPending) continue;
+      final text = command.payload['text']?.toString().trim() ?? '';
+      if (text.isEmpty) continue;
+      items.add(
+        HubItem(
+          id: 'pending-${command.id}',
+          kind: 'user',
+          role: 'queued_user_message',
+          timestamp: command.createdAt ?? DateTime.now().millisecondsSinceEpoch,
+          text: text,
+          metadata: {'commandStatus': _commandStatusLabel(command)},
+        ),
+      );
+    }
     if (widget.session.liveMessage != null) {
       items.add(widget.session.liveMessage!);
     }
     return items;
   }
+
+  String _commandStatusLabel(HubCommand command) {
+    switch (command.status) {
+      case 'queued':
+        return 'queued for Pi';
+      case 'delivered':
+        return 'sent to Pi';
+      default:
+        return command.status;
+    }
+  }
+
+  List<_TimelineItem> get _visibleItems {
+    final raw = _items;
+    final visible = <_TimelineItem>[];
+    for (var i = 0; i < raw.length; i += 1) {
+      final current = raw[i];
+      final next = i + 1 < raw.length ? raw[i + 1] : null;
+      if (_isToolCall(current) && _isToolResult(next)) {
+        visible.add(_TimelineItem(current, pairedToolResult: next));
+        i += 1;
+      } else {
+        visible.add(_TimelineItem(current));
+      }
+    }
+    return visible;
+  }
+
+  bool _isToolCall(HubItem item) {
+    return item.kind == 'assistant' &&
+        RegExp(r'^\[tool_call\s+[^\]]+\]', multiLine: true).hasMatch(item.text);
+  }
+
+  bool _isToolResult(HubItem? item) => item?.kind == 'tool';
 
   bool _isAtBottom = true;
 
@@ -115,7 +164,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final items = _items;
+    final items = _visibleItems;
     final modelNames = widget.availableModels.map((m) => m.id).toList();
     if (modelNames.isEmpty && _currentModel.isNotEmpty) {
       modelNames.add(_currentModel);
@@ -251,11 +300,13 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                           itemBuilder: (context, index) {
                             final item = items[index];
                             final isStreaming =
-                                widget.session.liveMessage?.id == item.id &&
+                                widget.session.liveMessage?.id ==
+                                    item.event.id &&
                                 widget.session.liveMessage?.streaming == true;
                             return EventRenderer(
-                              event: item,
+                              event: item.event,
                               isStreaming: isStreaming,
+                              pairedToolResult: item.pairedToolResult,
                               onViewDiff: (edit) => DiffDrawer.show(
                                 context,
                                 file: edit.file,
@@ -288,6 +339,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                   ),
                   onSlashCommands: () => SlashSheet.show(
                     context,
+                    commands: widget.session.slashCommands,
                     onCommand: (cmd) => widget.onSend(cmd),
                   ),
                   onModelSwitch: modelNames.isNotEmpty
@@ -324,6 +376,13 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       ),
     );
   }
+}
+
+class _TimelineItem {
+  const _TimelineItem(this.event, {this.pairedToolResult});
+
+  final HubItem event;
+  final HubItem? pairedToolResult;
 }
 
 class _Chip extends StatelessWidget {

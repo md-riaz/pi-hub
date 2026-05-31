@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 class UserBubble extends StatelessWidget {
   final String text;
   final String? time;
-  const UserBubble({super.key, required this.text, this.time});
+  final String? status;
+  const UserBubble({super.key, required this.text, this.time, this.status});
 
   @override
   Widget build(BuildContext context) {
@@ -11,7 +12,9 @@ class UserBubble extends StatelessWidget {
       alignment: Alignment.centerRight,
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.84),
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.84,
+        ),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
           color: const Color(0xFF67A7FF),
@@ -21,15 +24,37 @@ class UserBubble extends StatelessWidget {
             bottomLeft: Radius.circular(22),
             bottomRight: Radius.circular(8),
           ),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 2))],
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.15),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Text(text, style: const TextStyle(color: Color(0xFF06111F), fontSize: 14, height: 1.5)),
-            if (time != null) ...[
+            Text(
+              text,
+              style: const TextStyle(
+                color: Color(0xFF06111F),
+                fontSize: 14,
+                height: 1.5,
+              ),
+            ),
+            if (time != null || status != null) ...[
               const SizedBox(height: 4),
-              Text(time!, style: TextStyle(color: const Color(0xFF06111F).withOpacity(0.6), fontSize: 10)),
+              Text(
+                [
+                  if (status != null) status!,
+                  if (time != null) time!,
+                ].join(' · '),
+                style: TextStyle(
+                  color: const Color(0xFF06111F).withOpacity(0.6),
+                  fontSize: 10,
+                ),
+              ),
             ],
           ],
         ),

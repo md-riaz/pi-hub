@@ -206,14 +206,16 @@ class _HubHomePageState extends State<HubHomePage> {
   }
 
   Future<void> _disconnect() async {
-    await _subscription?.cancel();
+    final subscription = _subscription;
     _subscription = null;
-    setState(() {
-      _snapshot = null;
-      _detailSessionId = null;
-      _connectionState = 'Disconnected';
-    });
+    _client.close();
     if (mounted) {
+      setState(() {
+        _snapshot = null;
+        _detailSessionId = null;
+        _connecting = false;
+        _connectionState = 'Disconnected';
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Disconnected'),
@@ -221,25 +223,30 @@ class _HubHomePageState extends State<HubHomePage> {
         ),
       );
     }
+    unawaited(subscription?.cancel());
   }
 
   Future<void> _logout() async {
-    await _subscription?.cancel();
+    final subscription = _subscription;
     _subscription = null;
+    _client.close();
 
-    if (!mounted) return;
-    setState(() {
-      _snapshot = null;
-      _detailSessionId = null;
-      _connectionState = 'Disconnected';
-      _connectionError = null;
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Logged out. Saved hubs are still available.'),
-        duration: Duration(seconds: 2),
-      ),
-    );
+    if (mounted) {
+      setState(() {
+        _snapshot = null;
+        _detailSessionId = null;
+        _connecting = false;
+        _connectionState = 'Disconnected';
+        _connectionError = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Logged out. Saved hubs are still available.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+    unawaited(subscription?.cancel());
   }
 
   Future<void> _sendMessage(String sessionId, String text) async {

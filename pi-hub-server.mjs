@@ -186,6 +186,7 @@ function publicSession(session) {
     liveMessage: session.liveMessage,
     tools: Array.from(session.tools.values()),
     availableModels: session.availableModels || [],
+    slashCommands: Array.isArray(session.slashCommands) ? session.slashCommands : [],
     lastEvent: session.lastEvent,
     health,
     commands: publicCommandsForSession(session.id),
@@ -375,29 +376,12 @@ function removeSessionState(sessionId, reason = "removed") {
   return publicBefore;
 }
 
-function pruneStaleSessions() {
-  const threshold = Number(config.staleThresholdMs);
-  if (!Number.isFinite(threshold) || threshold <= 0) return;
-  const now = Date.now();
-  for (const session of Array.from(sessions.values())) {
-    const lastSeen = Number(session.lastSeen || 0);
-    if (lastSeen && now - lastSeen > threshold) {
-      removeSessionState(session.id, "stale");
-    }
-  }
-}
-
 function isSessionVisible(session) {
-  if (!session || session.online === false || session.status === "offline") return false;
-  const threshold = Number(config.staleThresholdMs);
-  if (!Number.isFinite(threshold) || threshold <= 0) return true;
-  const lastSeen = Number(session.lastSeen || 0);
-  return !lastSeen || Date.now() - lastSeen <= threshold;
+  return Boolean(session && session.online !== false && session.status !== "offline");
 }
 
 function snapshot() {
   expireCommands();
-  pruneStaleSessions();
   return {
     server: {
       pid: process.pid,
@@ -841,6 +825,7 @@ function getOrCreateSession(id) {
       liveMessage: undefined,
       tools: new Map(),
       availableModels: [],
+      slashCommands: [],
       lastEvent: undefined,
     };
     sessions.set(id, session);
@@ -909,11 +894,30 @@ function handleHubEvent(session, event) {
       }
       break;
     }
-    case "input":
+    case "input": {
+      if (event.item) {
+        const item = sanitizeItem(event.item);
+        const idx = session.history.findIndex(existing => existing.id === item.id);
+        if (idx >= 0) session.history[idx] = item;
+        else session.history.push(item);
+        session.history = session.history.slice(-Number(config.historyLimit));
+      }
+      break;
+    }
     case "command_received":
     case "model_select":
     case "thinking_level_select":
       break;
+    default: {
+      if (event.item) {
+        const item = sanitizeItem(event.item);
+        const idx = session.history.findIndex(existing => existing.id === item.id);
+        if (idx >= 0) session.history[idx] = item;
+        else session.history.push(item);
+        session.history = session.history.slice(-Number(config.historyLimit));
+      }
+      break;
+    }
   }
 }
 
@@ -932,6 +936,7 @@ function applyEvent(event) {
       status: info.status || "idle",
       contextUsage: info.contextUsage,
       availableModels: Array.isArray(info.availableModels) ? info.availableModels : [],
+      slashCommands: Array.isArray(info.slashCommands) ? info.slashCommands : [],
     });
     if (Array.isArray(info.history)) session.history = info.history.map(sanitizeItem).slice(-Number(config.historyLimit));
   } else if (event.type === "session.unregistered") {
@@ -1257,11 +1262,13 @@ const server = http.createServer(async (req, res) => {
         model: body.model ?? current.model,
         status: body.status ?? current.status,
         availableModels: Array.isArray(body.availableModels) ? body.availableModels : current.availableModels,
+        slashCommands: Array.isArray(body.slashCommands) ? body.slashCommands : current.slashCommands,
       }, sessionId, "presence");
       const session = applyEvent(event);
       if (typeof body.name !== "undefined") session.name = body.name;
       if (typeof event.payload.cwd !== "undefined") session.cwd = event.payload.cwd;
       if (Array.isArray(event.payload.availableModels)) session.availableModels = event.payload.availableModels;
+      if (Array.isArray(event.payload.slashCommands)) session.slashCommands = event.payload.slashCommands;
       broadcast({ type: "session_updated", reason: "presence", session: publicSession(session), event });
       sendJson(res, 200, { ok: true });
       return;
@@ -1339,7 +1346,7 @@ const server = http.createServer(async (req, res) => {
       const session = getOrCreateSession(sessionId);
       const event = normalizeEvent({ type: "command_queued", command: { id: command.id, type: command.type, timestamp: command.createdAt } }, sessionId, "command_queued");
       session.lastEvent = event;
-      broadcast({ type: "command_queued", sessionId, command: { id: command.id, type: command.type, timestamp: command.createdAt } });
+      broadcast({ type: "command_queued", sessionId, command: publicCommand(command) });
       sendJson(res, 200, { ok: true, commandId: command.id });
       return;
     }
@@ -1360,7 +1367,7 @@ const server = http.createServer(async (req, res) => {
       const session = getOrCreateSession(sessionId);
       const event = normalizeEvent({ type: "command_queued", command: { id: command.id, type: command.type, timestamp: command.createdAt } }, sessionId, "command_queued");
       session.lastEvent = event;
-      broadcast({ type: "command_queued", sessionId, command: { id: command.id, type: command.type, timestamp: command.createdAt } });
+      broadcast({ type: "command_queued", sessionId, command: publicCommand(command) });
       sendJson(res, 200, { ok: true, commandId: command.id });
       return;
     }
@@ -1443,7 +1450,7 @@ const server = http.createServer(async (req, res) => {
       const session = getOrCreateSession(sessionId);
       const event = normalizeEvent({ type: "command_queued", command: { id: command.id, type: command.type, timestamp: command.createdAt } }, sessionId, "command_queued");
       session.lastEvent = event;
-      broadcast({ type: "command_queued", sessionId, command: { id: command.id, type: command.type, timestamp: command.createdAt } });
+      broadcast({ type: "command_queued", sessionId, command: publicCommand(command) });
       sendJson(res, 200, { ok: true, commandId: command.id });
       return;
     }
