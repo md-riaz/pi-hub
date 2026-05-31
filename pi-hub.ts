@@ -530,8 +530,10 @@ export default function piHubExtension(pi: ExtensionAPI) {
 	const slash = slashCommandSummaries(pi).find((candidate) => candidate.name === name || candidate.name === `/${name}`);
 	if (!slash) throw new Error(`Slash command /${name} is not available`);
 	const commandDef = pi.getCommands().find((candidate: any) => String(candidate.invocationName || candidate.name || "") === name || String(candidate.invocationName || candidate.name || "") === `/${name}`) as any;
-	const handler = commandDef?.handler || commandDef?.execute || commandDef?.run;
-	if (typeof handler !== "function") throw new Error(`Slash command /${name} cannot be executed by Pi Hub`);
+	const handler = commandDef?.handler || commandDef?.execute || commandDef?.run || commandDef?.callback;
+	if (typeof handler !== "function") {
+		throw new Error(`Slash command /${name} cannot be executed by Pi Hub; command keys: ${Object.keys(commandDef || {}).join(",")}`);
+	}
 	await Promise.resolve(handler.call(commandDef, args, ctx));
 	await sendEvent({
 		type: "input",

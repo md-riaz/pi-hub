@@ -106,7 +106,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           item.metadata['commandId'].toString(),
     };
     for (final command in widget.session.commands) {
-      if (command.type != 'user_message' || !command.isPending) continue;
+      final showCommand =
+          command.type == 'user_message' || command.type == 'slash_command';
+      if (!showCommand || (!command.isPending && !command.isFailed)) continue;
       final text = command.payload['text']?.toString().trim() ?? '';
       if (text.isEmpty) continue;
       if (historyCommandIds.contains(command.id) ||
@@ -116,10 +118,14 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       items.add(
         HubItem(
           id: 'pending-${command.id}',
-          kind: 'user',
-          role: 'queued_user_message',
+          kind: command.isFailed ? 'system' : 'user',
+          role: command.type == 'slash_command'
+              ? 'slash_command'
+              : 'queued_user_message',
           timestamp: command.createdAt ?? DateTime.now().millisecondsSinceEpoch,
-          text: text,
+          text: command.isFailed && command.error != null
+              ? '$text\n\nFailed: ${command.error}'
+              : text,
           metadata: {
             'commandStatus': _commandStatusLabel(command),
             'commandId': command.id,
@@ -144,9 +150,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       }
       if (item.kind == 'user') {
         final normalized = item.text.trim().replaceAll(RegExp(r'\s+'), ' ');
-        final bucket = (item.timestamp / 30000).floor();
-        final key = '$normalized::$bucket';
-        if (!userKeys.add(key)) continue;
+        if (!userKeys.add(normalized)) continue;
       }
       out.add(item);
     }

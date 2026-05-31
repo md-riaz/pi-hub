@@ -1485,10 +1485,10 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const session = getOrCreateSession(sessionId);
-      const currentModel = Array.isArray(session.availableModels)
-        ? session.availableModels.find(model => model?.id === session.model)
-        : undefined;
-      const modelSupportsImages = Array.isArray(currentModel?.input) && currentModel.input.includes("image");
+      const matchingModels = Array.isArray(session.availableModels)
+        ? session.availableModels.filter(model => model?.id === session.model || model?.name === session.model)
+        : [];
+      const modelSupportsImages = matchingModels.some(model => Array.isArray(model?.input) && model.input.includes("image"));
       const attachmentDir = path.join(os.tmpdir(), "pi-hub-attachments");
       fs.mkdirSync(attachmentDir, { recursive: true });
       const savedAttachments = [];
