@@ -144,6 +144,33 @@ void main() {
     expect(snapshot.auditSummary.totalCount, 9);
   });
 
+  test('parses model input image capability', () {
+    final snapshot = HubSnapshot.fromJson({
+      'sessions': [
+        {
+          'id': 'vision-session',
+          'availableModels': [
+            {
+              'id': 'codex/gpt-5.5',
+              'name': 'Gpt 5.5',
+              'provider': 'omni',
+              'input': ['text', 'image'],
+            },
+            {
+              'id': 'codex/gpt-5.4',
+              'name': 'Gpt 5.4',
+              'input': ['text'],
+            },
+          ],
+        },
+      ],
+    });
+
+    final models = snapshot.sessions.single.availableModels;
+    expect(models.first.supportsImages, isTrue);
+    expect(models.last.supportsImages, isFalse);
+  });
+
   test('activeOnly filters offline and stale sessions', () {
     final now = DateTime.now().millisecondsSinceEpoch;
     final snapshot = HubSnapshot.fromJson({

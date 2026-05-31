@@ -509,9 +509,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final items = _visibleItems;
-    final modelNames = widget.availableModels.map((m) => m.id).toList();
-    if (modelNames.isEmpty && _currentModel.isNotEmpty) {
-      modelNames.add(_currentModel);
+    final models = [...widget.availableModels];
+    if (models.isEmpty && _currentModel.isNotEmpty) {
+      models.add(
+        HubModel(id: _currentModel, name: _currentModel, provider: null),
+      );
     }
 
     return PopScope(
@@ -649,6 +651,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                   onStopRunning: widget.onAbort,
                   onQueuedMessages: _showQueuedMessages,
                   model: _currentModel,
+                  modelSupportsImages:
+                      _selectedModelInfo?.supportsImages ?? false,
                   attachments: _pendingAttachments,
                   onRemoveAttachment: (index) {
                     setState(() => _pendingAttachments.removeAt(index));
@@ -667,10 +671,10 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                     commands: widget.session.slashCommands,
                     onCommand: (cmd) => widget.onSend(cmd),
                   ),
-                  onModelSwitch: modelNames.isNotEmpty
+                  onModelSwitch: models.isNotEmpty
                       ? () => ModelSheet.show(
                           context,
-                          models: modelNames,
+                          models: models,
                           selected: _currentModel,
                           onSelect: (m) {
                             setState(() => _currentModel = m);

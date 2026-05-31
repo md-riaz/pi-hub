@@ -1,18 +1,30 @@
 import 'package:flutter/material.dart';
+import '../hub_models.dart';
 import '../theme/hub_theme.dart';
 
 class ModelSheet extends StatelessWidget {
-  final List<String> models;
+  final List<HubModel> models;
   final String selected;
   final ValueChanged<String> onSelect;
 
-  const ModelSheet({super.key, required this.models, required this.selected, required this.onSelect});
+  const ModelSheet({
+    super.key,
+    required this.models,
+    required this.selected,
+    required this.onSelect,
+  });
 
-  static void show(BuildContext context, {required List<String> models, required String selected, required ValueChanged<String> onSelect}) {
+  static void show(
+    BuildContext context, {
+    required List<HubModel> models,
+    required String selected,
+    required ValueChanged<String> onSelect,
+  }) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (_) => ModelSheet(models: models, selected: selected, onSelect: onSelect),
+      builder: (_) =>
+          ModelSheet(models: models, selected: selected, onSelect: onSelect),
     );
   }
 
@@ -28,32 +40,98 @@ class ModelSheet extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)))),
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
           const SizedBox(height: 16),
-          const Text('Switch model', style: TextStyle(color: HubTheme.text, fontSize: 16, fontWeight: FontWeight.w600)),
+          const Text(
+            'Switch model',
+            style: TextStyle(
+              color: HubTheme.text,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
           const SizedBox(height: 16),
           Flexible(
             child: ListView.separated(
               shrinkWrap: true,
               itemCount: models.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              separatorBuilder: (context, index) => const SizedBox(height: 8),
               itemBuilder: (context, index) {
-                final m = models[index];
+                final model = models[index];
+                final selectedModel =
+                    model.id == selected || model.name == selected;
                 return GestureDetector(
-                  onTap: () { onSelect(m); Navigator.pop(context); },
+                  onTap: () {
+                    onSelect(model.id);
+                    Navigator.pop(context);
+                  },
                   child: Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: m == selected ? HubTheme.blue.withOpacity(0.1) : HubTheme.card,
-                      border: Border.all(color: m == selected ? HubTheme.blue.withOpacity(0.4) : HubTheme.softLine),
+                      color: selectedModel
+                          ? HubTheme.blue.withOpacity(0.1)
+                          : HubTheme.card,
+                      border: Border.all(
+                        color: selectedModel
+                            ? HubTheme.blue.withOpacity(0.4)
+                            : HubTheme.softLine,
+                      ),
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Row(
                       children: [
                         Expanded(
-                          child: Text(m, style: const TextStyle(color: HubTheme.text, fontSize: 14, fontWeight: FontWeight.w600)),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                model.id,
+                                style: const TextStyle(
+                                  color: HubTheme.text,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              if (model.supportsImages) ...[
+                                const SizedBox(height: 4),
+                                const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.image_outlined,
+                                      size: 13,
+                                      color: HubTheme.blue,
+                                    ),
+                                    SizedBox(width: 4),
+                                    Text(
+                                      'Image capable',
+                                      style: TextStyle(
+                                        color: HubTheme.blue,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ],
+                          ),
                         ),
-                        if (m == selected) const Icon(Icons.check_circle, size: 18, color: HubTheme.blue),
+                        if (selectedModel)
+                          const Icon(
+                            Icons.check_circle,
+                            size: 18,
+                            color: HubTheme.blue,
+                          ),
                       ],
                     ),
                   ),

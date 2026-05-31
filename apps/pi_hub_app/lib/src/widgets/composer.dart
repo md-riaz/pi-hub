@@ -15,6 +15,7 @@ class Composer extends StatefulWidget {
   final ValueChanged<int>? onRemoveAttachment;
   final VoidCallback? onStopRunning;
   final VoidCallback? onQueuedMessages;
+  final bool modelSupportsImages;
 
   const Composer({
     super.key,
@@ -29,6 +30,7 @@ class Composer extends StatefulWidget {
     this.onRemoveAttachment,
     this.onStopRunning,
     this.onQueuedMessages,
+    this.modelSupportsImages = false,
   });
 
   @override
@@ -183,6 +185,14 @@ class _ComposerState extends State<Composer> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        if (widget.modelSupportsImages) ...[
+                          const Icon(
+                            Icons.image_outlined,
+                            size: 13,
+                            color: HubTheme.blue,
+                          ),
+                          const SizedBox(width: 4),
+                        ],
                         Text(
                           widget.model,
                           style: const TextStyle(
