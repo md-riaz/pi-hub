@@ -355,6 +355,20 @@ class HubClient {
     }
   }
 
+  Future<void> updateCommandText(String commandId, String text) async {
+    await _postJson(
+      '/api/v2/commands/${Uri.encodeComponent(commandId)}/update',
+      {'text': text},
+    );
+  }
+
+  Future<void> cancelCommand(String commandId) async {
+    await _postJson(
+      '/api/v2/commands/${Uri.encodeComponent(commandId)}/cancel',
+      {},
+    );
+  }
+
   Future<void> sendMessage(String sessionId, String text) async {
     final client = _newHttpClient();
     try {

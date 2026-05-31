@@ -586,7 +586,10 @@ export default function piHubExtension(pi: ExtensionAPI) {
 				try {
 					if (command?.type === "user_message") {
 						if (typeof command.text !== "string" || !command.text.trim()) throw new Error("text required");
-						await Promise.resolve(pi.sendUserMessage(command.text));
+						const content = Array.isArray(command.attachments) && command.attachments.length > 0
+							? command.attachments
+							: command.text;
+						await Promise.resolve(pi.sendUserMessage(content));
 						await sendEvent({
 							type: "input",
 							item: {

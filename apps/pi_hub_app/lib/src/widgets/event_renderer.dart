@@ -13,6 +13,7 @@ class EventRenderer extends StatelessWidget {
   final ValueChanged<EditEvent>? onViewDiff;
   final ValueChanged<String>? onQuickReply;
   final HubItem? pairedToolResult;
+  final ValueChanged<HubItem>? onPendingCommandAction;
 
   const EventRenderer({
     super.key,
@@ -21,16 +22,24 @@ class EventRenderer extends StatelessWidget {
     this.onViewDiff,
     this.onQuickReply,
     this.pairedToolResult,
+    this.onPendingCommandAction,
   });
 
   @override
   Widget build(BuildContext context) {
     switch (event.kind) {
       case 'user':
+        final isPendingCommand = event.metadata['commandId'] != null;
         return UserBubble(
           text: event.text,
           time: _formatTime(event.timestamp),
           status: event.metadata['commandStatus']?.toString(),
+          onTap: isPendingCommand && onPendingCommandAction != null
+              ? () => onPendingCommandAction!(event)
+              : null,
+          onLongPress: isPendingCommand && onPendingCommandAction != null
+              ? () => onPendingCommandAction!(event)
+              : null,
         );
       case 'assistant':
         final toolCallCard = _toolCallCard(event);

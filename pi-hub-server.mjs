@@ -655,6 +655,27 @@ function expireCommands() {
   }
 }
 
+function updateQueuedCommand(commandId, payload = {}) {
+  const command = commands.get(commandId);
+  if (!command) throw new Error("command not found");
+  if (command.status !== "queued") throw new Error(`command is already ${command.status}`);
+  command.payload = { ...command.payload, ...payload };
+  commands.set(command.id, command);
+  const queue = commandQueues.get(command.sessionId) || [];
+  const queued = queue.find(item => item.id === command.id);
+  if (queued) Object.assign(queued, commandQueuePayload(command));
+  broadcastCommandUpdate(command, "updated");
+  return command;
+}
+
+function cancelQueuedCommand(commandId) {
+  const command = commands.get(commandId);
+  if (!command) throw new Error("command not found");
+  if (!PENDING_COMMAND_STATUSES.has(command.status)) return command;
+  commandQueues.set(command.sessionId, (commandQueues.get(command.sessionId) || []).filter(item => item.id !== command.id));
+  return markCommandStatus(command, "cancelled", { reason: "cancelled" }) || command;
+}
+
 function createCommand(sessionId, type, payload = {}) {
   if (!sessionId || typeof sessionId !== "string") throw new Error("sessionId required");
   expireCommands();
@@ -1213,6 +1234,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && url.pathname === "/api/stream") {
+      req.socket?.setNoDelay?.(true);
       res.writeHead(200, {
         "content-type": "text/event-stream; charset=utf-8",
         "cache-control": "no-cache, no-transform",
@@ -1319,6 +1341,26 @@ const server = http.createServer(async (req, res) => {
       }
       const result = await startAgentCreation(request);
       sendJson(res, 200, { ok: true, ...result });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname.startsWith("/api/v2/commands/")) {
+      const parts = url.pathname.split("/").filter(Boolean);
+      const commandId = decodeURIComponent(parts[2] || "");
+      const action = parts[3] || "";
+      if (!commandId) throw new Error("command id required");
+      const body = await readBody(req);
+      if (action === "cancel") {
+        const command = cancelQueuedCommand(commandId);
+        sendJson(res, 200, { ok: true, command: publicCommand(command) });
+        return;
+      }
+      if (action === "update") {
+        const command = updateQueuedCommand(commandId, { text: String(body.text || "").trim() });
+        sendJson(res, 200, { ok: true, command: publicCommand(command) });
+        return;
+      }
+      sendJson(res, 404, { error: "unknown command action" });
       return;
     }
 

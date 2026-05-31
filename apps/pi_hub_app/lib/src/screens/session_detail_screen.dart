@@ -46,6 +46,7 @@ class SessionDetailScreen extends StatefulWidget {
 class _SessionDetailScreenState extends State<SessionDetailScreen> {
   final _scrollController = ScrollController();
   String _currentModel = '';
+  final List<AttachmentData> _pendingAttachments = [];
 
   @override
   void initState() {
@@ -103,7 +104,10 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           role: 'queued_user_message',
           timestamp: command.createdAt ?? DateTime.now().millisecondsSinceEpoch,
           text: text,
-          metadata: {'commandStatus': _commandStatusLabel(command)},
+          metadata: {
+            'commandStatus': _commandStatusLabel(command),
+            'commandId': command.id,
+          },
         ),
       );
     }
@@ -148,6 +152,130 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   bool _isToolResult(HubItem? item) => item?.kind == 'tool';
 
   bool _isAtBottom = true;
+
+  Future<void> _showPendingCommandActions(HubItem item) async {
+    final commandId = item.metadata['commandId']?.toString();
+    if (commandId == null || commandId.isEmpty) return;
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: HubTheme.panel,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Queued message',
+                style: TextStyle(
+                  color: HubTheme.text,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 12),
+              ListTile(
+                leading: const Icon(Icons.edit, color: HubTheme.blue),
+                title: const Text(
+                  'Edit before Pi receives it',
+                  style: TextStyle(color: HubTheme.text),
+                ),
+                onTap: () async {
+                  Navigator.pop(context);
+                  final controller = TextEditingController(text: item.text);
+                  final updated = await showDialog<String>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      backgroundColor: HubTheme.panel,
+                      title: const Text(
+                        'Edit queued message',
+                        style: TextStyle(color: HubTheme.text),
+                      ),
+                      content: TextField(
+                        controller: controller,
+                        autofocus: true,
+                        maxLines: 6,
+                        style: const TextStyle(color: HubTheme.text),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('Cancel'),
+                        ),
+                        TextButton(
+                          onPressed: () =>
+                              Navigator.pop(context, controller.text),
+                          child: const Text('Save'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (updated == null || updated.trim().isEmpty) return;
+                  try {
+                    await widget.client.updateCommandText(commandId, updated);
+                  } catch (error) {
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Edit failed: $error')),
+                    );
+                  }
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.cancel, color: HubTheme.red),
+                title: const Text(
+                  'Cancel queued message',
+                  style: TextStyle(color: HubTheme.text),
+                ),
+                onTap: () async {
+                  Navigator.pop(context);
+                  try {
+                    await widget.client.cancelCommand(commandId);
+                  } catch (error) {
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Cancel failed: $error')),
+                    );
+                  }
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _sendWithAttachments(
+    String text,
+    List<AttachmentData> attachments,
+  ) async {
+    if (attachments.isEmpty) {
+      widget.onSend(text);
+      return;
+    }
+    try {
+      await widget.client.sendAttachment(
+        widget.session.id,
+        text: text.trim().isEmpty
+            ? '[${attachments.length} attachment(s)]'
+            : text,
+        attachments: attachments,
+      );
+      if (!mounted) return;
+      setState(() => _pendingAttachments.clear());
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Queued with attachment(s)')),
+      );
+      _scrollToBottom(force: true);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Attachment send failed: $error')));
+    }
+  }
 
   void _scrollToBottom({bool force = false}) {
     if (!force && !_isAtBottom) return;
@@ -313,6 +441,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                                 added: edit.added,
                                 removed: edit.removed,
                               ),
+                              onPendingCommandAction:
+                                  _showPendingCommandActions,
                               onQuickReply: (reply) {
                                 widget.onSend(reply);
                                 _scrollToBottom();
@@ -327,13 +457,19 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                     widget.onSend(text);
                     _scrollToBottom();
                   },
+                  onSendWithAttachments: _sendWithAttachments,
+                  onStopRunning: widget.onAbort,
                   model: _currentModel,
+                  attachments: _pendingAttachments,
+                  onRemoveAttachment: (index) {
+                    setState(() => _pendingAttachments.removeAt(index));
+                  },
                   onAttachment: () => AttachmentSheet.show(
                     context,
                     client: widget.client,
                     onPick: (attachments) {
                       if (attachments.isNotEmpty) {
-                        widget.onSend('[Attachment] ${attachments.first.name}');
+                        setState(() => _pendingAttachments.addAll(attachments));
                       }
                     },
                   ),
