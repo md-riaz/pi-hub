@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'inline_markdown_text.dart';
 
 class UserBubble extends StatelessWidget {
   final String text;
@@ -47,13 +48,16 @@ class UserBubble extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text(
-                text,
+              InlineMarkdownText(
+                text: text,
+                textAlign: TextAlign.end,
                 style: const TextStyle(
                   color: Color(0xFF06111F),
                   fontSize: 14,
                   height: 1.5,
                 ),
+                codeBackground: const Color(0xFF06111F).withOpacity(0.12),
+                codeForeground: const Color(0xFF06111F),
               ),
               if (time != null || status != null) ...[
                 const SizedBox(height: 4),

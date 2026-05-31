@@ -1,23 +1,35 @@
 import 'package:flutter/material.dart';
+import 'inline_markdown_text.dart';
 
 class AssistantBubble extends StatefulWidget {
   final String text;
   final bool streaming;
-  const AssistantBubble({super.key, required this.text, this.streaming = false});
+  const AssistantBubble({
+    super.key,
+    required this.text,
+    this.streaming = false,
+  });
 
   @override
   State<AssistantBubble> createState() => _AssistantBubbleState();
 }
 
-class _AssistantBubbleState extends State<AssistantBubble> with SingleTickerProviderStateMixin {
+class _AssistantBubbleState extends State<AssistantBubble>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _opacity;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 800))..repeat(reverse: true);
-    _opacity = Tween<double>(begin: 1, end: 0).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    )..repeat(reverse: true);
+    _opacity = Tween<double>(
+      begin: 1,
+      end: 0,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
   }
 
   @override
@@ -32,7 +44,9 @@ class _AssistantBubbleState extends State<AssistantBubble> with SingleTickerProv
       alignment: Alignment.centerLeft,
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.88),
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.88,
+        ),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: const Color(0xFF0D1117),
@@ -49,30 +63,42 @@ class _AssistantBubbleState extends State<AssistantBubble> with SingleTickerProv
           children: [
             Row(
               children: [
-                Icon(Icons.smart_toy_outlined, size: 12, color: const Color(0xFF65D7E0)),
-                const SizedBox(width: 6),
-                Text('PI', style: TextStyle(
+                Icon(
+                  Icons.smart_toy_outlined,
+                  size: 12,
                   color: const Color(0xFF65D7E0),
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1,
-                )),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'PI',
+                  style: TextStyle(
+                    color: const Color(0xFF65D7E0),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 6),
-            Text.rich(
-              TextSpan(
-                children: [
-                  TextSpan(text: widget.text, style: const TextStyle(color: Color(0xFFE7EDF7), fontSize: 14, height: 1.5)),
-                  if (widget.streaming) WidgetSpan(
-                    child: FadeTransition(
-                      opacity: _opacity,
-                      child: const Text('▋', style: TextStyle(color: Color(0xFF67A7FF), fontSize: 14)),
-                    ),
-                  ),
-                ],
+            InlineMarkdownText(
+              text: widget.text,
+              style: const TextStyle(
+                color: Color(0xFFE7EDF7),
+                fontSize: 14,
+                height: 1.5,
               ),
+              codeBackground: const Color(0xFF161B22),
+              codeForeground: const Color(0xFF79C0FF),
             ),
+            if (widget.streaming)
+              FadeTransition(
+                opacity: _opacity,
+                child: const Text(
+                  '▋',
+                  style: TextStyle(color: Color(0xFF67A7FF), fontSize: 14),
+                ),
+              ),
           ],
         ),
       ),

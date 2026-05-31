@@ -89,10 +89,23 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 
   List<HubItem> get _items {
     final items = List<HubItem>.from(widget.session.history);
+    final historyTexts = <String>{
+      for (final item in widget.session.history)
+        if (item.kind == 'user') item.text.trim(),
+    };
+    final historyCommandIds = <String>{
+      for (final item in widget.session.history)
+        if (item.metadata['commandId'] != null)
+          item.metadata['commandId'].toString(),
+    };
     for (final command in widget.session.commands) {
       if (command.type != 'user_message' || !command.isPending) continue;
       final text = command.payload['text']?.toString().trim() ?? '';
       if (text.isEmpty) continue;
+      if (historyCommandIds.contains(command.id) ||
+          historyTexts.contains(text)) {
+        continue;
+      }
       items.add(
         HubItem(
           id: 'pending-${command.id}',
@@ -126,13 +139,21 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 
   List<_TimelineItem> get _visibleItems {
     final raw = _items;
+    final consumed = <int>{};
     final visible = <_TimelineItem>[];
     for (var i = 0; i < raw.length; i += 1) {
+      if (consumed.contains(i)) continue;
       final current = raw[i];
-      final next = i + 1 < raw.length ? raw[i + 1] : null;
-      if (_isToolCall(current) && _isToolResult(next)) {
-        visible.add(_TimelineItem(current, pairedToolResult: next));
-        i += 1;
+      if (_isToolCall(current)) {
+        final resultIndex = _matchingToolResultIndex(raw, i);
+        if (resultIndex != null) {
+          consumed.add(resultIndex);
+          visible.add(
+            _TimelineItem(current, pairedToolResult: raw[resultIndex]),
+          );
+        } else {
+          visible.add(_TimelineItem(current));
+        }
       } else {
         visible.add(_TimelineItem(current));
       }
@@ -146,6 +167,27 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   }
 
   bool _isToolResult(HubItem? item) => item?.kind == 'tool';
+
+  int? _matchingToolResultIndex(List<HubItem> items, int callIndex) {
+    final call = items[callIndex];
+    final callIds = RegExp(r'\[tool_call\s+([^\]\s]+)')
+        .allMatches(call.text)
+        .map((match) => match.group(1))
+        .whereType<String>()
+        .toSet();
+    for (
+      var i = callIndex + 1;
+      i < items.length && i <= callIndex + 4;
+      i += 1
+    ) {
+      final candidate = items[i];
+      if (!_isToolResult(candidate)) continue;
+      final toolCallId = candidate.metadata['toolCallId']?.toString();
+      if (toolCallId == null || toolCallId.isEmpty || callIds.isEmpty) return i;
+      if (callIds.contains(toolCallId)) return i;
+    }
+    return null;
+  }
 
   bool _isAtBottom = true;
 
@@ -315,6 +357,76 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                     );
                   }
                 },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showQueuedMessages() async {
+    final pending = _items
+        .where((item) => item.metadata['commandId'] != null)
+        .toList();
+    if (pending.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No queued messages'),
+          duration: Duration(seconds: 1),
+        ),
+      );
+      return;
+    }
+    if (pending.length == 1) {
+      await _showPendingCommandActions(pending.first);
+      return;
+    }
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: HubTheme.panel,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Queued messages',
+                style: TextStyle(
+                  color: HubTheme.text,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: pending.length,
+                  separatorBuilder: (_, __) =>
+                      const Divider(color: HubTheme.softLine),
+                  itemBuilder: (context, index) {
+                    final item = pending[index];
+                    return ListTile(
+                      title: Text(
+                        item.text,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: HubTheme.text),
+                      ),
+                      subtitle: Text(
+                        item.metadata['commandStatus']?.toString() ?? 'queued',
+                        style: const TextStyle(color: HubTheme.text3),
+                      ),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _showPendingCommandActions(item);
+                      },
+                    );
+                  },
+                ),
               ),
             ],
           ),
@@ -528,6 +640,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                   },
                   onSendWithAttachments: _sendWithAttachments,
                   onStopRunning: widget.onAbort,
+                  onQueuedMessages: _showQueuedMessages,
                   model: _currentModel,
                   attachments: _pendingAttachments,
                   onRemoveAttachment: (index) {

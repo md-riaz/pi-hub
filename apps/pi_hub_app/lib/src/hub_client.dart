@@ -186,6 +186,7 @@ class HubClient {
           data['snapshot'] as Map<String, dynamic>,
         ).activeOnly();
       } else {
+        final previousSnapshot = snapshot;
         if (data['session'] != null) {
           final session = HubSession.fromJson(
             data['session'] as Map<String, dynamic>,
@@ -214,6 +215,13 @@ class HubClient {
           snapshot = _upsertCommandInSnapshot(
             snapshot ?? HubSnapshot.empty(),
             _commandFromStreamData(data),
+          );
+        }
+        if (data['event'] != null) {
+          snapshot = _upsertEventInSnapshot(
+            snapshot ?? HubSnapshot.empty(),
+            previousSnapshot,
+            _stringKeyMap(data['event'] as Map),
           );
         }
         if (data['approval'] != null) {
@@ -529,6 +537,140 @@ class AttachmentData {
     'mimeType': mimeType,
     'data': data,
   };
+}
+
+HubSnapshot _upsertEventInSnapshot(
+  HubSnapshot snapshot,
+  HubSnapshot? previousSnapshot,
+  Map<String, dynamic> event,
+) {
+  final sessionId = event['sessionId']?.toString();
+  if (sessionId == null || sessionId.isEmpty) return snapshot;
+  final index = snapshot.sessions.indexWhere(
+    (session) => session.id == sessionId,
+  );
+  if (index < 0) return snapshot;
+  final payload = event['payload'] is Map
+      ? _stringKeyMap(event['payload'] as Map)
+      : <String, dynamic>{};
+  HubItem? item;
+  final type = event['type']?.toString() ?? '';
+  if (payload['item'] is Map) {
+    item = HubItem.fromJson(_stringKeyMap(payload['item'] as Map));
+  } else if (type == 'session.message_update' && payload['text'] != null) {
+    item = HubItem(
+      id:
+          event['id']?.toString() ??
+          'live-${event['seq'] ?? DateTime.now().millisecondsSinceEpoch}',
+      kind: 'assistant',
+      role: 'assistant',
+      timestamp:
+          _intValue(event['timestamp']) ??
+          DateTime.now().millisecondsSinceEpoch,
+      text: payload['text'].toString(),
+      metadata: const {},
+      streaming: true,
+    );
+  }
+  if (item == null) return snapshot;
+  final session = snapshot.sessions[index];
+  final priorSession = previousSnapshot?.sessions
+      .where((candidate) => candidate.id == sessionId)
+      .firstOrNull;
+  final priorHistory = priorSession?.history ?? const <HubItem>[];
+  var history = session.history;
+  var liveMessage = session.liveMessage;
+  if (type == 'session.message_update') {
+    liveMessage = HubItem(
+      id: item.id,
+      kind: item.kind,
+      role: item.role,
+      timestamp: item.timestamp,
+      text: item.text,
+      metadata: item.metadata,
+      streaming: true,
+    );
+  } else if (type == 'session.message_end' || type == 'session.input') {
+    history = _upsertHistoryItemList(history, item, priorHistory: priorHistory);
+    liveMessage = null;
+  }
+  final nextSessions = [...snapshot.sessions];
+  nextSessions[index] = _copySession(
+    session,
+    history: history,
+    liveMessage: liveMessage,
+  );
+  return HubSnapshot(
+    server: snapshot.server,
+    sessions: nextSessions,
+    inboxItems: snapshot.inboxItems,
+    commands: snapshot.commands,
+    approvals: snapshot.approvals,
+    diffReviews: snapshot.diffReviews,
+    pushDevices: snapshot.pushDevices,
+    auditEvents: snapshot.auditEvents,
+    auditSummary: snapshot.auditSummary,
+  );
+}
+
+List<HubItem> _upsertHistoryItemList(
+  List<HubItem> history,
+  HubItem item, {
+  List<HubItem> priorHistory = const [],
+}) {
+  final next = [...history];
+  final commandId = item.metadata['commandId']?.toString();
+  var index = commandId == null || commandId.isEmpty
+      ? -1
+      : next.indexWhere(
+          (existing) => existing.metadata['commandId']?.toString() == commandId,
+        );
+  if (index < 0) index = next.indexWhere((existing) => existing.id == item.id);
+  if (index < 0 && item.kind == 'user') {
+    index = next.indexWhere(
+      (existing) =>
+          existing.kind == 'user' && existing.text.trim() == item.text.trim(),
+    );
+  }
+  if (index >= 0) {
+    next[index] = item;
+  } else {
+    next.add(item);
+  }
+  for (final prior in priorHistory) {
+    if (next.any((existing) => existing.id == prior.id)) continue;
+    next.insert(0, prior);
+  }
+  next.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+  return next;
+}
+
+HubSession _copySession(
+  HubSession session, {
+  List<HubItem>? history,
+  HubItem? liveMessage,
+}) {
+  return HubSession(
+    id: session.id,
+    name: session.name,
+    cwd: session.cwd,
+    model: session.model,
+    pid: session.pid,
+    startedAt: session.startedAt,
+    lastSeen: session.lastSeen,
+    status: session.status,
+    online: session.online,
+    history: history ?? session.history,
+    liveMessage: liveMessage,
+    tools: session.tools,
+    contextUsage: session.contextUsage,
+    availableModels: session.availableModels,
+    slashCommands: session.slashCommands,
+    lastEvent: session.lastEvent,
+    health: session.health,
+    commands: session.commands,
+    inboxItems: session.inboxItems,
+  );
 }
 
 HubSnapshot _upsertInboxItemInSnapshot(

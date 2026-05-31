@@ -14,6 +14,7 @@ class Composer extends StatefulWidget {
   final List<AttachmentData> attachments;
   final ValueChanged<int>? onRemoveAttachment;
   final VoidCallback? onStopRunning;
+  final VoidCallback? onQueuedMessages;
 
   const Composer({
     super.key,
@@ -27,6 +28,7 @@ class Composer extends StatefulWidget {
     this.attachments = const [],
     this.onRemoveAttachment,
     this.onStopRunning,
+    this.onQueuedMessages,
   });
 
   @override
@@ -159,24 +161,6 @@ class _ComposerState extends State<Composer> {
               onSubmitted: (_) => _send(),
               textInputAction: TextInputAction.newline,
             ),
-            if (widget.onStopRunning != null) ...[
-              Row(
-                children: [
-                  _ShortcutChip(
-                    label: 'Esc',
-                    text: 'Stop running agent',
-                    onTap: widget.onStopRunning,
-                  ),
-                  const SizedBox(width: 8),
-                  const _ShortcutChip(
-                    label: '↑',
-                    text: 'Tap queued bubble to edit',
-                    onTap: null,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-            ],
             Row(
               children: [
                 _ActionBtn(icon: Icons.attach_file, onTap: widget.onAttachment),
@@ -218,6 +202,11 @@ class _ComposerState extends State<Composer> {
                   ),
                 ),
                 _ActionBtn(icon: Icons.info_outline, onTap: widget.onModelInfo),
+                _ActionBtn(
+                  icon: Icons.edit_note,
+                  onTap: widget.onQueuedMessages,
+                  tooltip: 'Edit queued message',
+                ),
                 const Spacer(),
                 GestureDetector(
                   onTap: _canSend ? _send : null,
@@ -246,56 +235,28 @@ class _ComposerState extends State<Composer> {
   }
 }
 
-class _ShortcutChip extends StatelessWidget {
-  final String label;
-  final String text;
-  final VoidCallback? onTap;
-  const _ShortcutChip({required this.label, required this.text, this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-        decoration: BoxDecoration(
-          color: HubTheme.card,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: HubTheme.softLine),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              label,
-              style: HubTheme.monoSmall.copyWith(color: HubTheme.cyan),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              text,
-              style: const TextStyle(color: HubTheme.text2, fontSize: 11),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _ActionBtn extends StatelessWidget {
   final IconData icon;
   final VoidCallback? onTap;
-  const _ActionBtn({required this.icon, this.onTap});
+  final Color color;
+  final String? tooltip;
+  const _ActionBtn({
+    required this.icon,
+    this.onTap,
+    this.color = HubTheme.text2,
+    this.tooltip,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    final button = GestureDetector(
       onTap: onTap,
       child: SizedBox(
         width: 36,
         height: 36,
-        child: Icon(icon, size: 18, color: HubTheme.text2),
+        child: Icon(icon, size: 18, color: color),
       ),
     );
+    return tooltip == null ? button : Tooltip(message: tooltip!, child: button);
   }
 }
