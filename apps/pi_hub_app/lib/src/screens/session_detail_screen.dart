@@ -149,12 +149,20 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         if (!commandIds.add(commandId)) continue;
       }
       if (item.kind == 'user') {
-        final normalized = item.text.trim().replaceAll(RegExp(r'\s+'), ' ');
+        final normalized = _dedupeUserText(item.text);
         if (!userKeys.add(normalized)) continue;
       }
       out.add(item);
     }
     return out;
+  }
+
+  String _dedupeUserText(String text) {
+    return text
+        .replaceAll(RegExp(r'\[Image:[^\]]+\]', caseSensitive: false), '')
+        .replaceAll(RegExp(r'\[image\]', caseSensitive: false), '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
   }
 
   String _commandStatusLabel(HubCommand command) {

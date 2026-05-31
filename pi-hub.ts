@@ -529,12 +529,41 @@ export default function piHubExtension(pi: ExtensionAPI) {
 	if (!ctx) throw new Error("session not available");
 	const slash = slashCommandSummaries(pi).find((candidate) => candidate.name === name || candidate.name === `/${name}`);
 	if (!slash) throw new Error(`Slash command /${name} is not available`);
-	const commandDef = pi.getCommands().find((candidate: any) => String(candidate.invocationName || candidate.name || "") === name || String(candidate.invocationName || candidate.name || "") === `/${name}`) as any;
-	const handler = commandDef?.handler || commandDef?.execute || commandDef?.run || commandDef?.callback;
-	if (typeof handler !== "function") {
-		throw new Error(`Slash command /${name} cannot be executed by Pi Hub; command keys: ${Object.keys(commandDef || {}).join(",")}`);
+
+	if (name === "hub") {
+		const sub = args.trim().toLowerCase();
+		if (sub === "start") {
+			await ensureServer(config);
+			serverOk = true;
+			startBackgroundLoops();
+			await register(ctx);
+			notifyFallback(`Pi Hub started.\n\n${networkHint(config)}`, "info");
+		} else if (sub === "stop") {
+			await disconnectSession();
+			notifyFallback("Disconnected this session from Pi Hub. Server still running for other sessions.", "info");
+		} else if (sub === "server stop") {
+			const pid = readPid();
+			await disconnectSession();
+			if (pid && isProcessRunning(pid)) process.kill(pid);
+		} else if (sub === "info" || sub === "status" || !sub) {
+			const pid = readPid();
+			notifyFallback([
+				"═══ Pi Hub ═══",
+				`Status: ${serverOk ? "connected" : "not connected"}`,
+				`PID: ${pid ?? "unknown"}`,
+				`Config: ${configPath()}`,
+				"",
+				networkHint(config),
+			].join("\n"), serverOk ? "info" : "warning");
+		} else {
+			throw new Error("Unknown /hub command. Use: /hub info, /hub start, /hub stop, /hub server stop");
+		}
+	} else if (name === "compact") {
+		ctx.compact();
+	} else {
+		throw new Error(`Remote execution for /${name} is not supported yet. Use the Pi TUI for this slash command.`);
 	}
-	await Promise.resolve(handler.call(commandDef, args, ctx));
+
 	await sendEvent({
 		type: "input",
 		item: {
