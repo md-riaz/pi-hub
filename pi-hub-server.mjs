@@ -1094,6 +1094,14 @@ function agentCreationDetails(request, extra = {}) {
   };
 }
 
+function agentCreationArgs(request) {
+  const args = [...config.agentCreation.defaultArgs];
+  if (request.name) args.push("--name", request.name);
+  if (request.model) args.push("--model", request.model);
+  if (request.initialPrompt) args.push(request.initialPrompt);
+  return args;
+}
+
 function startAgentCreation(request) {
   const createdAt = Date.now();
   const creation = {
@@ -1116,15 +1124,24 @@ function startAgentCreation(request) {
     PI_HUB_AGENT_MODEL: request.model,
     PI_HUB_INITIAL_PROMPT: request.initialPrompt,
   };
-  const args = [...config.agentCreation.defaultArgs];
-  const child = spawn(config.agentCreation.piCommand, args, {
-    cwd: request.cwd,
-    env,
-    shell: false,
-    windowsHide: true,
-    detached: !config.agentCreation.testMode,
-    stdio: config.agentCreation.testMode ? ["ignore", "pipe", "pipe"] : "ignore",
-  });
+  const args = agentCreationArgs(request);
+  const child = process.platform === "win32" && !config.agentCreation.testMode
+    ? spawn("cmd.exe", ["/c", "start", "Pi Hub Agent", config.agentCreation.piCommand, ...args], {
+        cwd: request.cwd,
+        env,
+        shell: false,
+        windowsHide: false,
+        detached: true,
+        stdio: "ignore",
+      })
+    : spawn(config.agentCreation.piCommand, args, {
+        cwd: request.cwd,
+        env,
+        shell: false,
+        windowsHide: false,
+        detached: !config.agentCreation.testMode,
+        stdio: config.agentCreation.testMode ? ["ignore", "pipe", "pipe"] : "ignore",
+      });
   creation.pid = child.pid || null;
   creation.status = config.agentCreation.testMode ? "running" : "spawned";
   recordAudit("agent.create.spawned", `Agent creation spawned in ${request.cwd}`, agentCreationDetails(request, { creationId: creation.id, pid: creation.pid, testMode: creation.testMode }));

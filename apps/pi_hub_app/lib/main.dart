@@ -433,7 +433,7 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
           onStart: (result) async {
             try {
               _lastUsedModel = result.model;
-              await _client.createAgent(
+              final created = await _client.createAgent(
                 AgentCreateRequest(
                   cwd: result.path,
                   initialPrompt: result.prompt,
@@ -442,7 +442,7 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
               );
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Session created')),
+                  SnackBar(content: Text('Session ${created.summary}')),
                 );
               }
             } catch (e) {
