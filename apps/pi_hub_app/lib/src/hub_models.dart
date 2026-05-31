@@ -429,17 +429,26 @@ class HubHealth {
 }
 
 class HubModel {
-  HubModel({required this.id, required this.name, required this.provider});
+  HubModel({
+    required this.id,
+    required this.name,
+    required this.provider,
+    this.input = const [],
+  });
 
   final String id;
   final String name;
   final String? provider;
+  final List<String> input;
+
+  bool get supportsImages => input.contains('image');
 
   factory HubModel.fromJson(Map<String, dynamic> json) {
     return HubModel(
       id: json['id']?.toString() ?? '',
       name: json['name']?.toString() ?? json['id']?.toString() ?? '',
       provider: json['provider']?.toString(),
+      input: _stringList(json['input']),
     );
   }
 }

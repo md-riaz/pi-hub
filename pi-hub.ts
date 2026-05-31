@@ -323,12 +323,13 @@ function sessionHistory(ctx: ExtensionContext, limit: number): HubItem[] {
 	}
 }
 
-function availableModelSummaries(ctx: ExtensionContext): Array<{ id: string; name: string; provider?: string }> {
+function availableModelSummaries(ctx: ExtensionContext): Array<{ id: string; name: string; provider?: string; input?: string[] }> {
 	try {
 		return ctx.modelRegistry.getAvailable().map((model: any) => ({
 			id: String(model.id),
 			name: String(model.name || model.id),
 			provider: typeof model.provider === "string" ? model.provider : undefined,
+			input: Array.isArray(model.input) ? model.input.map((item: unknown) => String(item)) : undefined,
 		}));
 	} catch {
 		return [];
@@ -690,7 +691,14 @@ export default function piHubExtension(pi: ExtensionAPI) {
 	pi.on("input", (event) => {
 		void sendEvent({
 			type: "input",
-			item: { id: `input-${Date.now()}`, kind: "user", role: "user", timestamp: Date.now(), text: event.text },
+			item: {
+				id: `input-${Date.now()}`,
+				kind: "user",
+				role: "user",
+				timestamp: Date.now(),
+				text: event.text,
+				metadata: { source: event.source },
+			},
 			source: event.source,
 		});
 	});

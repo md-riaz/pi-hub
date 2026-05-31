@@ -855,6 +855,20 @@ function getOrCreateSession(id) {
   return session;
 }
 
+function upsertHistoryItem(session, rawItem) {
+  const item = sanitizeItem(rawItem);
+  const commandId = item?.metadata?.commandId;
+  let idx = commandId ? session.history.findIndex(existing => existing?.metadata?.commandId === commandId) : -1;
+  if (idx < 0 && item?.kind === "user" && item?.text) {
+    const source = item?.metadata?.source;
+    idx = session.history.findIndex(existing => existing?.kind === "user" && existing?.text === item.text && existing?.metadata?.source === source);
+  }
+  if (idx < 0) idx = session.history.findIndex(existing => existing.id === item.id);
+  if (idx >= 0) session.history[idx] = { ...session.history[idx], ...item, metadata: { ...(session.history[idx].metadata || {}), ...(item.metadata || {}) } };
+  else session.history.push(item);
+  session.history = session.history.slice(-Number(config.historyLimit));
+}
+
 function handleHubEvent(session, event) {
   session.lastEvent = event;
   if (!event || typeof event !== "object") return;
@@ -887,11 +901,7 @@ function handleHubEvent(session, event) {
     }
     case "message_end": {
       if (event.item) {
-        const item = sanitizeItem(event.item);
-        const idx = session.history.findIndex(existing => existing.id === item.id);
-        if (idx >= 0) session.history[idx] = item;
-        else session.history.push(item);
-        session.history = session.history.slice(-Number(config.historyLimit));
+        upsertHistoryItem(session, event.item);
       }
       session.liveMessage = undefined;
       break;
@@ -917,11 +927,7 @@ function handleHubEvent(session, event) {
     }
     case "input": {
       if (event.item) {
-        const item = sanitizeItem(event.item);
-        const idx = session.history.findIndex(existing => existing.id === item.id);
-        if (idx >= 0) session.history[idx] = item;
-        else session.history.push(item);
-        session.history = session.history.slice(-Number(config.historyLimit));
+        upsertHistoryItem(session, event.item);
       }
       break;
     }
@@ -931,11 +937,7 @@ function handleHubEvent(session, event) {
       break;
     default: {
       if (event.item) {
-        const item = sanitizeItem(event.item);
-        const idx = session.history.findIndex(existing => existing.id === item.id);
-        if (idx >= 0) session.history[idx] = item;
-        else session.history.push(item);
-        session.history = session.history.slice(-Number(config.historyLimit));
+        upsertHistoryItem(session, event.item);
       }
       break;
     }
@@ -1470,30 +1472,60 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 404, { error: "session not found" });
         return;
       }
+      if (attachments.length > 5) {
+        sendJson(res, 400, { error: "maximum 5 attachments" });
+        return;
+      }
+      const session = getOrCreateSession(sessionId);
+      const currentModel = Array.isArray(session.availableModels)
+        ? session.availableModels.find(model => model?.id === session.model)
+        : undefined;
+      const modelSupportsImages = Array.isArray(currentModel?.input) && currentModel.input.includes("image");
+      const attachmentDir = path.join(os.tmpdir(), "pi-hub-attachments");
+      fs.mkdirSync(attachmentDir, { recursive: true });
+      const savedAttachments = [];
       const content = [];
       if (text) content.push({ type: "text", text });
       for (const att of attachments) {
-        const name = String(att.name || "file");
+        const originalName = path.basename(String(att.name || "attachment"));
+        const safeName = originalName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120) || "attachment";
         const mimeType = String(att.mimeType || "application/octet-stream");
         const data = String(att.data || "");
         if (!data) continue;
-        const sizeBytes = Math.ceil(data.length * 3 / 4);
-        if (sizeBytes > 5 * 1024 * 1024) {
-          sendJson(res, 400, { error: `Attachment ${name} exceeds 5MB limit` });
+        const bytes = Buffer.from(data, "base64");
+        if (bytes.length > 5 * 1024 * 1024) {
+          sendJson(res, 400, { error: `Attachment ${originalName} exceeds 5MB limit` });
           return;
         }
-        if (mimeType.startsWith("image/")) {
-          content.push({ type: "image", mimeType, data, name });
+        const isImage = mimeType.startsWith("image/");
+        const filePath = path.join(attachmentDir, `${Date.now()}-${crypto.randomUUID()}-${safeName}`);
+        fs.writeFileSync(filePath, bytes);
+        const saved = { name: originalName, mimeType, path: filePath, size: bytes.length };
+        savedAttachments.push(saved);
+        if (isImage && modelSupportsImages) {
+          content.push({ type: "image", data, mimeType });
+        } else if (isImage) {
+          content.push({ type: "text", text: `[Attachment: ${originalName}] ${filePath}` });
+        } else if (mimeType.startsWith("text/") || ["application/json", "application/xml"].includes(mimeType)) {
+          content.push({ type: "text", text: `[File: ${originalName}]\n${bytes.toString("utf-8")}` });
         } else {
-          content.push({ type: "text", text: `[File: ${name}]\n${Buffer.from(data, "base64").toString("utf-8")}` });
+          content.push({ type: "text", text: `[Attachment: ${originalName}] ${filePath}` });
         }
       }
-      const command = createCommand(sessionId, "user_message", { text: text || `[${attachments.length} attachment(s)]`, attachments: content });
-      const session = getOrCreateSession(sessionId);
+      const messageText = content
+        .map(part => part.type === "text" ? part.text : `[Image: ${savedAttachments.find(att => att.mimeType === part.mimeType)?.name || "image"}]`)
+        .filter(Boolean)
+        .join("\n\n");
+      const command = createCommand(sessionId, "user_message", {
+        text: messageText,
+        attachments: content,
+        savedAttachments,
+        attachmentMode: modelSupportsImages ? "inline-image" : "file-path",
+      });
       const event = normalizeEvent({ type: "command_queued", command: { id: command.id, type: command.type, timestamp: command.createdAt } }, sessionId, "command_queued");
       session.lastEvent = event;
       broadcast({ type: "command_queued", sessionId, command: publicCommand(command) });
-      sendJson(res, 200, { ok: true, commandId: command.id });
+      sendJson(res, 200, { ok: true, commandId: command.id, attachments: savedAttachments });
       return;
     }
 

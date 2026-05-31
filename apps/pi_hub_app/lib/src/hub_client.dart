@@ -446,6 +446,9 @@ class HubClient {
   }
 
   /// Send text + optional file attachments to a session.
+  ///
+  /// The hub stores attachments on the host and sends Pi a text prompt with
+  /// local file paths, mirroring Pi TUI image paste behavior.
   Future<void> sendAttachment(
     String sessionId, {
     required String text,

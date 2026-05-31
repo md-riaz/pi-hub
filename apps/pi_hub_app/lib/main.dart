@@ -50,6 +50,9 @@ class _HubHomePageState extends State<HubHomePage> {
   String _connectionState = 'Disconnected';
   String? _connectionError;
   bool _connecting = false;
+  bool _manualDisconnect = false;
+  int _streamRetry = 0;
+  Timer? _reconnectTimer;
   List<Map<String, String>> _recentConnections = [];
 
   bool get _connected =>
@@ -63,6 +66,7 @@ class _HubHomePageState extends State<HubHomePage> {
 
   @override
   void dispose() {
+    _reconnectTimer?.cancel();
     _subscription?.cancel();
     _serverController.dispose();
     _tokenController.dispose();
@@ -148,10 +152,65 @@ class _HubHomePageState extends State<HubHomePage> {
     return 'Connection failed: $message';
   }
 
+  void _startStream() {
+    unawaited(_subscription?.cancel());
+    _subscription = _client.streamSnapshots().listen(
+      (snapshot) {
+        if (!mounted) return;
+        _streamRetry = 0;
+        setState(() {
+          _snapshot = snapshot;
+          if (_detailSessionId != null &&
+              !snapshot.sessions.any((s) => s.id == _detailSessionId)) {
+            _detailSessionId = null;
+          }
+          _connectionState = 'Live';
+        });
+      },
+      onError: (Object error) {
+        if (!mounted || _manualDisconnect) return;
+        setState(() => _connectionState = 'Reconnecting: $error');
+        _scheduleReconnect();
+      },
+      onDone: () {
+        if (!mounted || _manualDisconnect) return;
+        setState(() => _connectionState = 'Reconnecting...');
+        _scheduleReconnect();
+      },
+      cancelOnError: true,
+    );
+  }
+
+  void _scheduleReconnect() {
+    if (_manualDisconnect || _connecting) return;
+    _reconnectTimer?.cancel();
+    final delaySeconds = _streamRetry < 5 ? (1 << _streamRetry) : 30;
+    _streamRetry += 1;
+    _reconnectTimer = Timer(Duration(seconds: delaySeconds), () async {
+      if (!mounted || _manualDisconnect) return;
+      try {
+        final snapshot = await _client.fetchSnapshot();
+        if (!mounted || _manualDisconnect) return;
+        setState(() {
+          _snapshot = snapshot;
+          _connectionState = 'Reconnected';
+          _connectionError = null;
+        });
+        _startStream();
+      } catch (error) {
+        if (!mounted || _manualDisconnect) return;
+        setState(() => _connectionState = 'Reconnect failed: $error');
+        _scheduleReconnect();
+      }
+    });
+  }
+
   Future<void> _connect() async {
     if (_connecting) return;
     setState(() {
       _connecting = true;
+      _manualDisconnect = false;
+      _streamRetry = 0;
       _connectionState = 'Connecting...';
     });
 
@@ -173,24 +232,7 @@ class _HubHomePageState extends State<HubHomePage> {
         _connecting = false;
         _connectionError = null;
       });
-      _subscription = _client.streamSnapshots().listen(
-        (snapshot) {
-          if (!mounted) return;
-          setState(() {
-            _snapshot = snapshot;
-            if (_detailSessionId != null &&
-                !snapshot.sessions.any((s) => s.id == _detailSessionId)) {
-              _detailSessionId = null;
-            }
-            _connectionState = 'Live';
-          });
-        },
-        onError: (Object error) {
-          if (!mounted) return;
-          setState(() => _connectionState = 'Stream error: $error');
-        },
-        cancelOnError: false,
-      );
+      _startStream();
     } catch (error) {
       if (!mounted) return;
       final help = _connectionErrorHelp(error);
@@ -206,6 +248,8 @@ class _HubHomePageState extends State<HubHomePage> {
   }
 
   Future<void> _disconnect() async {
+    _manualDisconnect = true;
+    _reconnectTimer?.cancel();
     final subscription = _subscription;
     _subscription = null;
     _client.close();
@@ -227,6 +271,8 @@ class _HubHomePageState extends State<HubHomePage> {
   }
 
   Future<void> _logout() async {
+    _manualDisconnect = true;
+    _reconnectTimer?.cancel();
     final subscription = _subscription;
     _subscription = null;
     _client.close();

@@ -153,6 +153,58 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 
   bool _isAtBottom = true;
 
+  HubModel? get _selectedModelInfo {
+    for (final model in widget.availableModels) {
+      if (model.id == _currentModel || model.name == _currentModel) {
+        return model;
+      }
+    }
+    return null;
+  }
+
+  void _showModelInfo() {
+    final model = _selectedModelInfo;
+    final actualName = model?.name.trim().isNotEmpty == true
+        ? model!.name
+        : _currentModel;
+    final provider = model?.provider?.trim();
+    final behavior = model == null
+        ? 'No extra model metadata from hub.'
+        : model.input.isEmpty
+        ? 'Text input'
+        : 'Supports ${model.input.join(', ')} input';
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: HubTheme.panel,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Current model',
+                style: TextStyle(
+                  color: HubTheme.text,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 12),
+              _InfoRow(label: 'Shown', value: _currentModel),
+              _InfoRow(label: 'Actual name', value: actualName),
+              if (provider != null && provider.isNotEmpty)
+                _InfoRow(label: 'Provider', value: provider),
+              _InfoRow(label: 'Behavior', value: behavior),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _showPendingCommandActions(HubItem item) async {
     final commandId = item.metadata['commandId']?.toString();
     if (commandId == null || commandId.isEmpty) return;
@@ -350,7 +402,16 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           ),
           actions: [
             IconButton(
-              icon: Icon(Icons.pause, size: 17, color: HubTheme.yellow),
+              tooltip: 'Stop running agent',
+              icon: const Icon(
+                Icons.stop_circle_outlined,
+                size: 17,
+                color: HubTheme.red,
+              ),
+              onPressed: widget.onAbort,
+            ),
+            IconButton(
+              icon: const Icon(Icons.pause, size: 17, color: HubTheme.yellow),
               onPressed: widget.onPause,
             ),
             IconButton(
@@ -489,6 +550,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                           },
                         )
                       : null,
+                  onModelInfo: _showModelInfo,
                 ),
               ],
             ),
@@ -519,6 +581,31 @@ class _TimelineItem {
 
   final HubItem event;
   final HubItem? pairedToolResult;
+}
+
+class _InfoRow extends StatelessWidget {
+  final String label;
+  final String value;
+  const _InfoRow({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(width: 92, child: Text(label, style: HubTheme.monoSmall)),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(color: HubTheme.text, fontSize: 13),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _Chip extends StatelessWidget {

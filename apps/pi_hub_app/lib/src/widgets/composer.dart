@@ -10,6 +10,7 @@ class Composer extends StatefulWidget {
   final VoidCallback? onAttachment;
   final VoidCallback? onSlashCommands;
   final VoidCallback? onModelSwitch;
+  final VoidCallback? onModelInfo;
   final List<AttachmentData> attachments;
   final ValueChanged<int>? onRemoveAttachment;
   final VoidCallback? onStopRunning;
@@ -22,6 +23,7 @@ class Composer extends StatefulWidget {
     this.onAttachment,
     this.onSlashCommands,
     this.onModelSwitch,
+    this.onModelInfo,
     this.attachments = const [],
     this.onRemoveAttachment,
     this.onStopRunning,
@@ -184,6 +186,7 @@ class _ComposerState extends State<Composer> {
                 ),
                 GestureDetector(
                   onTap: widget.onModelSwitch,
+                  onLongPress: widget.onModelInfo,
                   child: Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 10,
@@ -214,6 +217,7 @@ class _ComposerState extends State<Composer> {
                     ),
                   ),
                 ),
+                _ActionBtn(icon: Icons.info_outline, onTap: widget.onModelInfo),
                 const Spacer(),
                 GestureDetector(
                   onTap: _canSend ? _send : null,
