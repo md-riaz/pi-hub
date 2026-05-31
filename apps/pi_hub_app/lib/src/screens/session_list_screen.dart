@@ -154,7 +154,7 @@ class _SessionListScreenState extends State<SessionListScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text(
-                              'Pi Mobile Companion',
+                              'Pi Mobile',
                               style: TextStyle(
                                 color: HubTheme.text,
                                 fontSize: 18,

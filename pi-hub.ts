@@ -18,7 +18,6 @@ interface PiHubConfig {
 	pollIntervalMs: number;
 	agentCreation?: {
 		piCommand?: string;
-		workspaceRoots?: string[];
 		defaultArgs?: string[];
 		testMode?: boolean;
 	};
@@ -47,7 +46,6 @@ const DEFAULT_CONFIG: PiHubConfig = {
 	pollIntervalMs: 1500,
 	agentCreation: {
 		piCommand: "pi",
-		workspaceRoots: [homedir()],
 		defaultArgs: [],
 		testMode: false,
 	},

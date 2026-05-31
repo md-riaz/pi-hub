@@ -37,7 +37,6 @@ const DEFAULT_CONFIG = {
   },
   agentCreation: {
     piCommand: "pi",
-    workspaceRoots: [os.homedir()],
     defaultArgs: [],
     testMode: false,
   },
@@ -53,9 +52,6 @@ function normalizeAgentCreationConfig(value = {}) {
     piCommand: typeof source.piCommand === "string" && source.piCommand.trim()
       ? source.piCommand.trim()
       : DEFAULT_CONFIG.agentCreation.piCommand,
-    workspaceRoots: Array.isArray(source.workspaceRoots)
-      ? source.workspaceRoots.filter(root => typeof root === "string" && root.trim()).map(root => path.resolve(root))
-      : DEFAULT_CONFIG.agentCreation.workspaceRoots,
     defaultArgs: Array.isArray(source.defaultArgs)
       ? source.defaultArgs.filter(arg => typeof arg === "string")
       : [],
@@ -1035,31 +1031,10 @@ function resolveWorkspace(cwd) {
   return fs.realpathSync(resolved);
 }
 
-function pathInside(root, child) {
-  const relative = path.relative(root, child);
-  return !relative || (!relative.startsWith("..") && !path.isAbsolute(relative));
-}
-
-function allowedWorkspaceRoot(cwd) {
-  for (const root of config.agentCreation.workspaceRoots) {
-    try {
-      const stats = fs.statSync(root);
-      if (!stats.isDirectory()) continue;
-      const realRoot = fs.realpathSync(root);
-      if (pathInside(realRoot, cwd)) return realRoot;
-    } catch {}
-  }
-  return undefined;
-}
-
 function validateAgentCreationRequest(body = {}) {
   const cwd = resolveWorkspace(body.cwd ?? body.workspace);
-  if (!config.agentCreation.workspaceRoots.length) throw new Error("workspace root allowlist is empty");
-  const workspaceRoot = allowedWorkspaceRoot(cwd);
-  if (!workspaceRoot) throw new Error("cwd outside configured workspace roots");
   return {
     cwd,
-    workspaceRoot,
     name: creationText(body.name, "name", 120),
     model: creationText(body.model, "model", 160),
     initialPrompt: creationText(body.initialPrompt ?? body.prompt, "initialPrompt", 8000),
@@ -1089,7 +1064,6 @@ function broadcastAgentCreation(creation) {
 function agentCreationDetails(request, extra = {}) {
   return {
     cwd: request.cwd,
-    workspaceRoot: request.workspaceRoot,
     name: request.name || null,
     model: request.model || null,
     hasInitialPrompt: Boolean(request.initialPrompt),

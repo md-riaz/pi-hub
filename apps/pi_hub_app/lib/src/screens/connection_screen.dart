@@ -83,7 +83,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              const Text('Pi Mobile Companion', style: HubTheme.headingL),
+              const Text('Pi Mobile', style: HubTheme.headingL),
               const SizedBox(height: 8),
               Text(
                 'Connect to your hub server and control Pi sessions from your phone.',
