@@ -312,7 +312,13 @@ class _HubHomePageState extends State<HubHomePage> {
 
   Future<void> _runControl(String action, {String? modelId}) async {
     if (_detailSessionId == null) return;
-    final label = action == 'set_model' ? 'Model switch' : action;
+    final label = switch (action) {
+      'abort' => 'Stop running response',
+      'compact' => 'Compact context',
+      'shutdown' => 'Shut down session',
+      'set_model' => 'Model switch',
+      _ => action,
+    };
     try {
       await _client.sendControl(_detailSessionId!, action, modelId: modelId);
       if (!mounted) return;
@@ -352,8 +358,6 @@ class _HubHomePageState extends State<HubHomePage> {
       onCompact: () => _runControl('compact'),
       onShutdown: () => _runControl('shutdown'),
       onModelChanged: (modelId) => _runControl('set_model', modelId: modelId),
-      onPause: () => _runControl('abort'),
-      onStop: () => _runControl('shutdown'),
       onNewSession: () {
         NewSessionSheet.show(
           context,

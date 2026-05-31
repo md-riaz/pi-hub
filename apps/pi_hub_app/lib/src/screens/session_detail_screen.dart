@@ -19,8 +19,6 @@ class SessionDetailScreen extends StatefulWidget {
   final VoidCallback? onCompact;
   final VoidCallback? onShutdown;
   final ValueChanged<String>? onModelChanged;
-  final VoidCallback? onPause;
-  final VoidCallback? onStop;
   final VoidCallback? onBack;
   final HubClient client;
 
@@ -33,8 +31,6 @@ class SessionDetailScreen extends StatefulWidget {
     this.onCompact,
     this.onShutdown,
     this.onModelChanged,
-    this.onPause,
-    this.onStop,
     this.onBack,
     required this.client,
   });
@@ -160,6 +156,34 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       }
     }
     return null;
+  }
+
+  Future<void> _confirmShutdown() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: HubTheme.panel,
+        title: const Text(
+          'Shut down session?',
+          style: TextStyle(color: HubTheme.text),
+        ),
+        content: Text(
+          'This will terminate ${widget.session.displayName}.',
+          style: const TextStyle(color: HubTheme.text2),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Shut down'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) widget.onShutdown?.call();
   }
 
   void _showModelInfo() {
@@ -411,10 +435,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
               onPressed: widget.onAbort,
             ),
             IconButton(
-              icon: const Icon(Icons.pause, size: 17, color: HubTheme.yellow),
-              onPressed: widget.onPause,
-            ),
-            IconButton(
               icon: const Icon(
                 Icons.more_horiz,
                 size: 19,
@@ -422,20 +442,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
               ),
               onPressed: () => SessionMenu.show(
                 context,
-                onPause: widget.onPause,
-                onStop: widget.onStop,
-                onSwitchModel: modelNames.isNotEmpty
-                    ? () => ModelSheet.show(
-                        context,
-                        models: modelNames,
-                        selected: _currentModel,
-                        onSelect: (m) {
-                          setState(() => _currentModel = m);
-                          widget.onModelChanged?.call(m);
-                        },
-                      )
-                    : null,
-                onCopyId: () {},
+                onCompact: widget.onCompact,
+                onShutdown: _confirmShutdown,
               ),
             ),
           ],

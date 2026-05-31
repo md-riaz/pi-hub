@@ -23,8 +23,6 @@ class MissionControlScreen extends StatefulWidget {
   final VoidCallback? onCompact;
   final VoidCallback? onShutdown;
   final ValueChanged<String>? onModelChanged;
-  final VoidCallback? onPause;
-  final VoidCallback? onStop;
   final VoidCallback? onNewSession;
   final VoidCallback? onBroadcast;
   final VoidCallback? onDisconnect;
@@ -52,8 +50,6 @@ class MissionControlScreen extends StatefulWidget {
     this.onCompact,
     this.onShutdown,
     this.onModelChanged,
-    this.onPause,
-    this.onStop,
     this.onNewSession,
     this.onBroadcast,
     this.onDisconnect,
@@ -99,8 +95,6 @@ class _MissionControlScreenState extends State<MissionControlScreen> {
           onCompact: widget.onCompact,
           onShutdown: widget.onShutdown,
           onModelChanged: widget.onModelChanged,
-          onPause: widget.onPause,
-          onStop: widget.onStop,
           onBack: widget.onCloseDetail,
         );
       }
