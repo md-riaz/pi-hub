@@ -121,6 +121,27 @@ class HubSnapshot {
       auditSummary: auditSummary,
     );
   }
+
+  HubSnapshot activeOnly({int? nowMs}) {
+    final thresholdMs = server?.staleThresholdMs;
+    final activeSessions = sessions
+        .where(
+          (session) =>
+              session.isActive(staleThresholdMs: thresholdMs, nowMs: nowMs),
+        )
+        .toList();
+    return HubSnapshot(
+      server: server,
+      sessions: activeSessions,
+      inboxItems: inboxItems,
+      commands: commands,
+      approvals: approvals,
+      diffReviews: diffReviews,
+      pushDevices: pushDevices,
+      auditEvents: auditEvents,
+      auditSummary: auditSummary,
+    );
+  }
 }
 
 class HubServerInfo {
@@ -241,11 +262,8 @@ class HubPushProviderStatus {
   final bool configured;
   final String provider;
 
-  factory HubPushProviderStatus.empty() => HubPushProviderStatus(
-    enabled: false,
-    configured: false,
-    provider: '',
-  );
+  factory HubPushProviderStatus.empty() =>
+      HubPushProviderStatus(enabled: false, configured: false, provider: '');
 
   factory HubPushProviderStatus.fromJson(Map<String, dynamic> json) {
     return HubPushProviderStatus(
@@ -297,10 +315,30 @@ class HubSession {
   final List<HubCommand> commands;
   final List<HubInboxItem> inboxItems;
 
-  String get displayName => (name == null || name!.isEmpty)
-      ? cwd.split(RegExp(r'[\\/]')).last
-      : name!;
+  String get displayName {
+    final trimmedName = name?.trim();
+    if (trimmedName != null && trimmedName.isNotEmpty) return trimmedName;
+    final pathName = cwd
+        .split(RegExp(r'[\\/]'))
+        .where((part) => part.isNotEmpty)
+        .lastOrNull;
+    return pathName == null || pathName.isEmpty ? shortId : pathName;
+  }
+
   String get shortId => id.length <= 8 ? id : id.substring(0, 8);
+
+  bool isActive({int? staleThresholdMs, int? nowMs}) {
+    if (!online) return false;
+    final state = health?.state.toLowerCase();
+    if (state == 'offline' || state == 'stale') return false;
+    final lastSeenMs = lastSeen;
+    final threshold = staleThresholdMs;
+    if (threshold != null && threshold > 0 && lastSeenMs != null) {
+      final age = (nowMs ?? DateTime.now().millisecondsSinceEpoch) - lastSeenMs;
+      if (age > threshold) return false;
+    }
+    return true;
+  }
 
   factory HubSession.fromJson(Map<String, dynamic> json) {
     return HubSession(
@@ -760,7 +798,6 @@ class HubPushDevice {
 
 class HubAuditEvent {
   HubAuditEvent({
-
     required this.id,
     required this.type,
     required this.timestamp,

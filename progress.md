@@ -1,5 +1,36 @@
 # Progress
 
+### 2026-05-31 — Subagent TUI shape check
+
+- Checked installed `pi-subagents` extension behavior: foreground subagents are tool results with `toolName: subagent` and custom TUI `renderCall`/`renderResult`; async background uses the `subagent-async` widget.
+- Mobile renderer now special-cases `toolResult.toolName == subagent` as a collapsible Subagent result/failure terminal card instead of generic tool output.
+
+### 2026-05-31 — Message type rendering audit
+
+- Audited Pi history conversion and Flutter rendering for known item kinds: user, assistant, tool, bash, custom, system, edit, waiting.
+- Tool results now render as collapsible terminal cards instead of empty operation groups.
+- Bash execution history now renders as a terminal card.
+- Assistant `[thinking]`, `[image]`, and `[tool_call ...]` synthetic lines render as compact/collapsible cards instead of regular chat bubbles.
+- Custom/system messages now route through waiting/edit/sub-agent/terminal-style cards instead of unstructured fallback when possible.
+
+### 2026-05-31 — Detail topbar + tool call rendering fixes
+
+- Removed logout button from session detail topbar; logout remains available from the home/session list screen only.
+- Assistant messages containing `[tool_call ...]` are now rendered as collapsible tool-call cards instead of regular chat messages.
+
+### 2026-05-31 — Session detail scroll fixes
+
+- Fixed session detail initial open so long histories jump to the latest message instead of staying at top.
+- Added a floating scroll-to-bottom button that appears when user scrolls away from bottom.
+
+### 2026-05-31 — Active session list + back navigation fixes
+
+- Verified hub snapshot on physical Android/debug run; current server response included stale/offline sessions.
+- Server snapshot now filters out offline and stale sessions so the API exposes only visible active Pi instances.
+- Flutter client also filters snapshots and session updates defensively, preventing stale/offline sessions from appearing if an older hub returns them.
+- Session display names prefer Pi session name and fall back to cwd basename, then short session id.
+- Fixed session detail back handling to return to session list instead of popping the root route to a black screen.
+
 ### 2026-05-31 — Dedicated Flutter logout
 
 - Added dedicated Flutter logout controls on session list and session detail screens.

@@ -2,6 +2,12 @@
 
 ## Pi Hub
 
+- [x] Audit all Pi history message types and route them to deliberate Flutter renderers, including actual `pi-subagents` tool results and future sub-agent/delegate messages.
+- [x] Keep logout on home/session list only; remove it from session detail topbar.
+- [x] Render assistant `[tool_call ...]` entries as collapsible tool-call cards.
+- [x] Add session detail scroll-to-bottom button and open details at latest message.
+- [x] Ensure hub snapshot and Flutter app show only active Pi sessions, not stale/offline sessions.
+- [x] Fix session detail back button returning to black screen.
 - [x] Add dedicated Flutter logout that leaves current hub while preserving recent saved hub URLs/tokens.
 - [x] Confirm architecture with user.
 - [x] Use local hub-host server now, keep protocol hybrid/cloud-friendly.

@@ -101,7 +101,7 @@ class _MissionControlScreenState extends State<MissionControlScreen> {
           onModelChanged: widget.onModelChanged,
           onPause: widget.onPause,
           onStop: widget.onStop,
-          onLogout: widget.onLogout,
+          onBack: widget.onCloseDetail,
         );
       }
     }

@@ -143,4 +143,57 @@ void main() {
     expect(snapshot.pushDevices.single.scopes, ['critical', 'approval']);
     expect(snapshot.auditSummary.totalCount, 9);
   });
+
+  test('activeOnly filters offline and stale sessions', () {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final snapshot = HubSnapshot.fromJson({
+      'server': {'staleThresholdMs': 120000},
+      'sessions': [
+        {
+          'id': 'active',
+          'name': 'Active Agent',
+          'online': true,
+          'lastSeen': now - 1000,
+        },
+        {
+          'id': 'offline',
+          'name': 'Offline Agent',
+          'online': false,
+          'lastSeen': now - 1000,
+        },
+        {
+          'id': 'stale-health',
+          'name': 'Stale Agent',
+          'online': true,
+          'health': {'state': 'stale'},
+        },
+        {
+          'id': 'stale-age',
+          'name': 'Old Agent',
+          'online': true,
+          'lastSeen': now - 240000,
+        },
+      ],
+    }).activeOnly(nowMs: now);
+
+    expect(snapshot.sessions.map((session) => session.id), ['active']);
+  });
+
+  test('displayName prefers session name and falls back to cwd basename', () {
+    final snapshot = HubSnapshot.fromJson({
+      'sessions': [
+        {
+          'id': 'named-session',
+          'name': 'Helpful Agent',
+          'cwd': '/work/project',
+        },
+        {'id': 'path-session', 'name': '', 'cwd': r'C:\\Users\\me\\repo'},
+        {'id': 'empty-session', 'name': '', 'cwd': ''},
+      ],
+    });
+
+    expect(snapshot.sessions[0].displayName, 'Helpful Agent');
+    expect(snapshot.sessions[1].displayName, 'repo');
+    expect(snapshot.sessions[2].displayName, 'empty-se');
+  });
 }

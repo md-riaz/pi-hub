@@ -387,6 +387,14 @@ function pruneStaleSessions() {
   }
 }
 
+function isSessionVisible(session) {
+  if (!session || session.online === false || session.status === "offline") return false;
+  const threshold = Number(config.staleThresholdMs);
+  if (!Number.isFinite(threshold) || threshold <= 0) return true;
+  const lastSeen = Number(session.lastSeen || 0);
+  return !lastSeen || Date.now() - lastSeen <= threshold;
+}
+
 function snapshot() {
   expireCommands();
   pruneStaleSessions();
@@ -404,6 +412,7 @@ function snapshot() {
       capabilities: serverCapabilities(),
     },
     sessions: Array.from(sessions.values())
+      .filter(isSessionVisible)
       .sort((a, b) => String(a.cwd).localeCompare(String(b.cwd)) || String(a.name || a.id).localeCompare(String(b.name || b.id)))
       .map(publicSession),
     commands: publicCommands(),

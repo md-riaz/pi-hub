@@ -110,8 +110,9 @@ class _HubHomePageState extends State<HubHomePage> {
       final name = Uri.tryParse(url)?.host ?? url;
       _recentConnections.removeWhere((c) => c['url'] == url);
       _recentConnections.insert(0, {'name': name, 'url': url, 'token': token});
-      if (_recentConnections.length > 5)
+      if (_recentConnections.length > 5) {
         _recentConnections = _recentConnections.sublist(0, 5);
+      }
       await prefs.setStringList(
         _prefRecentConnections,
         _recentConnections
@@ -318,15 +319,17 @@ class _HubHomePageState extends State<HubHomePage> {
                   model: result.model,
                 ),
               );
-              if (mounted)
+              if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Session created')),
                 );
+              }
             } catch (e) {
-              if (mounted)
+              if (context.mounted) {
                 ScaffoldMessenger.of(
                   context,
                 ).showSnackBar(SnackBar(content: Text('Create failed: $e')));
+              }
             }
           },
         );
@@ -340,13 +343,14 @@ class _HubHomePageState extends State<HubHomePage> {
               try {
                 await _client.sendMessage(sid, '[Broadcast] ${result.prompt}');
               } catch (e) {
-                if (mounted)
+                if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Broadcast to $sid failed: $e')),
                   );
+                }
               }
             }
-            if (mounted)
+            if (context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text(
@@ -354,6 +358,7 @@ class _HubHomePageState extends State<HubHomePage> {
                   ),
                 ),
               );
+            }
           },
         );
       },

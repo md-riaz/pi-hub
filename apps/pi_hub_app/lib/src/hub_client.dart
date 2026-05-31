@@ -158,7 +158,9 @@ class HubClient {
       if (response.statusCode != 200) {
         throw Exception('${response.statusCode}: $body');
       }
-      return HubSnapshot.fromJson(jsonDecode(body) as Map<String, dynamic>);
+      return HubSnapshot.fromJson(
+        jsonDecode(body) as Map<String, dynamic>,
+      ).activeOnly();
     } finally {
       client.close(force: true);
     }
@@ -182,12 +184,21 @@ class HubClient {
       if (data['type'] == 'snapshot') {
         snapshot = HubSnapshot.fromJson(
           data['snapshot'] as Map<String, dynamic>,
-        );
+        ).activeOnly();
       } else {
         if (data['session'] != null) {
-          snapshot = (snapshot ?? HubSnapshot.empty()).upsert(
-            HubSession.fromJson(data['session'] as Map<String, dynamic>),
+          final session = HubSession.fromJson(
+            data['session'] as Map<String, dynamic>,
           );
+          if (session.isActive(
+            staleThresholdMs: snapshot?.server?.staleThresholdMs,
+          )) {
+            snapshot = (snapshot ?? HubSnapshot.empty()).upsert(session);
+          } else {
+            snapshot = (snapshot ?? HubSnapshot.empty()).removeSession(
+              session.id,
+            );
+          }
         }
         if (data['type'] == 'session_removed' && data['sessionId'] != null) {
           final removedId = data['sessionId'].toString();
@@ -406,7 +417,9 @@ class HubClient {
   Future<BrowseResult> browseDirectory(String dirPath) async {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
     try {
-      final uri = Uri.parse('$baseUrl/api/v2/browse?path=${Uri.encodeComponent(dirPath)}&token=$token');
+      final uri = Uri.parse(
+        '$baseUrl/api/v2/browse?path=${Uri.encodeComponent(dirPath)}&token=$token',
+      );
       final req = await client.getUrl(uri);
       final res = await req.close().timeout(const Duration(seconds: 8));
       final body = await res.transform(utf8.decoder).join();
@@ -419,17 +432,23 @@ class HubClient {
   }
 
   /// Send text + optional file attachments to a session.
-  Future<void> sendAttachment(String sessionId, {required String text, required List<AttachmentData> attachments}) async {
+  Future<void> sendAttachment(
+    String sessionId, {
+    required String text,
+    required List<AttachmentData> attachments,
+  }) async {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
     try {
       final uri = Uri.parse('$baseUrl/api/v2/send-attachment?token=$token');
       final req = await client.postUrl(uri);
       req.headers.contentType = ContentType.json;
-      req.write(jsonEncode({
-        'sessionId': sessionId,
-        'text': text,
-        'attachments': attachments.map((a) => a.toJson()).toList(),
-      }));
+      req.write(
+        jsonEncode({
+          'sessionId': sessionId,
+          'text': text,
+          'attachments': attachments.map((a) => a.toJson()).toList(),
+        }),
+      );
       final res = await req.close().timeout(const Duration(seconds: 30));
       final body = await res.transform(utf8.decoder).join();
       if (res.statusCode != 200) throw Exception('${res.statusCode}: $body');
@@ -450,7 +469,9 @@ class BrowseResult {
     return BrowseResult(
       path: json['path'] ?? '/',
       parent: json['parent'] ?? '/',
-      items: (json['items'] as List? ?? []).map((e) => BrowseEntry.fromJson(e)).toList(),
+      items: (json['items'] as List? ?? [])
+          .map((e) => BrowseEntry.fromJson(e))
+          .toList(),
     );
   }
 }
@@ -460,7 +481,11 @@ class BrowseEntry {
   final String path;
   final bool isDirectory;
 
-  BrowseEntry({required this.name, required this.path, required this.isDirectory});
+  BrowseEntry({
+    required this.name,
+    required this.path,
+    required this.isDirectory,
+  });
 
   factory BrowseEntry.fromJson(Map<String, dynamic> json) {
     return BrowseEntry(
@@ -476,9 +501,17 @@ class AttachmentData {
   final String mimeType;
   final String data; // base64 encoded
 
-  AttachmentData({required this.name, required this.mimeType, required this.data});
+  AttachmentData({
+    required this.name,
+    required this.mimeType,
+    required this.data,
+  });
 
-  Map<String, dynamic> toJson() => {'name': name, 'mimeType': mimeType, 'data': data};
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'mimeType': mimeType,
+    'data': data,
+  };
 }
 
 HubSnapshot _upsertInboxItemInSnapshot(
