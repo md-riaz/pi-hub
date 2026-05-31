@@ -289,6 +289,7 @@ class HubSession {
     required this.contextUsage,
     required this.availableModels,
     this.slashCommands = const [],
+    this.todos = const [],
     this.startedAt,
     this.lastSeen,
     this.lastEvent = const {},
@@ -312,6 +313,7 @@ class HubSession {
   final ContextUsage? contextUsage;
   final List<HubModel> availableModels;
   final List<HubSlashCommand> slashCommands;
+  final List<HubTodoItem> todos;
   final Map<String, dynamic> lastEvent;
   final HubHealth? health;
   final List<HubCommand> commands;
@@ -362,6 +364,7 @@ class HubSession {
       slashCommands: _mapList(
         json['slashCommands'],
       ).map(HubSlashCommand.fromJson).toList(),
+      todos: _mapList(json['todos']).map(HubTodoItem.fromJson).toList(),
       lastEvent: _asMap(json['lastEvent']),
       health: _optionalMap(json['health'], HubHealth.fromJson),
       commands: _mapList(json['commands']).map(HubCommand.fromJson).toList(),
@@ -391,10 +394,43 @@ class HubSession {
       contextUsage: contextUsage,
       availableModels: availableModels,
       slashCommands: slashCommands,
+      todos: todos,
       lastEvent: lastEvent,
       health: health,
       commands: commands ?? this.commands,
       inboxItems: inboxItems ?? this.inboxItems,
+    );
+  }
+}
+
+class HubTodoItem {
+  HubTodoItem({
+    required this.id,
+    required this.subject,
+    required this.status,
+    this.description = '',
+    this.owner = '',
+  });
+
+  final String id;
+  final String subject;
+  final String status;
+  final String description;
+  final String owner;
+
+  bool get isCompleted => status.toLowerCase() == 'completed';
+  bool get isActive => status.toLowerCase() == 'in_progress';
+
+  factory HubTodoItem.fromJson(Map<String, dynamic> json) {
+    final rawId = json['id'] ?? json['taskId'] ?? json['key'];
+    final subject =
+        json['subject'] ?? json['title'] ?? json['text'] ?? json['name'];
+    return HubTodoItem(
+      id: rawId?.toString() ?? subject?.toString() ?? '',
+      subject: subject?.toString() ?? '',
+      status: json['status']?.toString() ?? 'pending',
+      description: json['description']?.toString() ?? '',
+      owner: json['owner']?.toString() ?? '',
     );
   }
 }

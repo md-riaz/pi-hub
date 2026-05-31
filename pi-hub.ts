@@ -380,6 +380,25 @@ function slashCommandSummaries(pi: ExtensionAPI): Array<{ name: string; descript
 	}
 }
 
+function currentTodos(ctx: ExtensionContext): unknown[] {
+	const sources = [
+		(ctx as any).todos,
+		(ctx as any).todoList,
+		(ctx as any).tasks,
+		(ctx as any).taskList,
+		(ctx as any).session?.todos,
+		(ctx as any).sessionManager?.getTodos?.(),
+		(ctx as any).sessionManager?.getTasks?.(),
+	];
+	for (const source of sources) {
+		try {
+			const value = typeof source === "function" ? source.call(ctx) : source;
+			if (Array.isArray(value)) return value;
+		} catch {}
+	}
+	return [];
+}
+
 function currentSessionInfo(ctx: ExtensionContext, config: PiHubConfig, status: string, slashCommands: Array<{ name: string; description?: string }> = []) {
 	return {
 		id: ctx.sessionManager.getSessionId(),
@@ -392,6 +411,7 @@ function currentSessionInfo(ctx: ExtensionContext, config: PiHubConfig, status: 
 		contextUsage: ctx.getContextUsage?.(),
 		availableModels: availableModelSummaries(ctx),
 		slashCommands,
+		todos: currentTodos(ctx),
 		history: sessionHistory(ctx, config.historyLimit),
 		...clientMetadata(),
 	};
@@ -574,6 +594,7 @@ async function handleCollaborationMessage(command: any): Promise<void> {
 				contextUsage: ctx.getContextUsage?.(),
 				availableModels: availableModelSummaries(ctx),
 				slashCommands: slashCommandSummaries(pi),
+				todos: currentTodos(ctx),
 				...clientMetadata(),
 			});
 		} catch {

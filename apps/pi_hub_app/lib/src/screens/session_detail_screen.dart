@@ -10,6 +10,7 @@ import '../hub_client.dart';
 import '../widgets/attachment_sheet.dart';
 import '../widgets/session_menu.dart';
 import '../widgets/diff_drawer.dart';
+import '../widgets/todo_panel.dart';
 
 class SessionDetailScreen extends StatefulWidget {
   final HubSession session;
@@ -599,6 +600,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                   connected: widget.connected,
                   onReconnect: widget.onReconnect,
                 ),
+                TodoPanel(todos: widget.session.todos),
                 // Events
                 Expanded(
                   child: items.isEmpty

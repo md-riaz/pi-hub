@@ -181,6 +181,7 @@ function publicSession(session) {
     tools: Array.from(session.tools.values()),
     availableModels: session.availableModels || [],
     slashCommands: Array.isArray(session.slashCommands) ? session.slashCommands : [],
+    todos: Array.isArray(session.todos) ? session.todos : [],
     lastEvent: session.lastEvent,
     health,
     commands: publicCommandsForSession(session.id),
@@ -841,6 +842,7 @@ function getOrCreateSession(id) {
       tools: new Map(),
       availableModels: [],
       slashCommands: [],
+      todos: [],
       lastEvent: undefined,
     };
     sessions.set(id, session);
@@ -974,6 +976,7 @@ function applyEvent(event) {
       contextUsage: info.contextUsage,
       availableModels: Array.isArray(info.availableModels) ? info.availableModels : [],
       slashCommands: Array.isArray(info.slashCommands) ? info.slashCommands : [],
+      todos: Array.isArray(info.todos) ? info.todos : [],
     });
     if (Array.isArray(info.history)) session.history = info.history.map(sanitizeItem).slice(-Number(config.historyLimit));
   } else if (event.type === "session.unregistered") {
@@ -1279,12 +1282,14 @@ const server = http.createServer(async (req, res) => {
         status: body.status ?? current.status,
         availableModels: Array.isArray(body.availableModels) ? body.availableModels : current.availableModels,
         slashCommands: Array.isArray(body.slashCommands) ? body.slashCommands : current.slashCommands,
+        todos: Array.isArray(body.todos) ? body.todos : current.todos,
       }, sessionId, "presence");
       const session = applyEvent(event);
       if (typeof body.name !== "undefined") session.name = body.name;
       if (typeof event.payload.cwd !== "undefined") session.cwd = event.payload.cwd;
       if (Array.isArray(event.payload.availableModels)) session.availableModels = event.payload.availableModels;
       if (Array.isArray(event.payload.slashCommands)) session.slashCommands = event.payload.slashCommands;
+      if (Array.isArray(event.payload.todos)) session.todos = event.payload.todos;
       broadcast({ type: "session_updated", reason: "presence", session: publicSession(session), event });
       sendJson(res, 200, { ok: true });
       return;
