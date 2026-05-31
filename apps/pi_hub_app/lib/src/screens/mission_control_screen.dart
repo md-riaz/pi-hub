@@ -112,6 +112,9 @@ class _MissionControlScreenState extends State<MissionControlScreen> {
       onBroadcast: widget.onBroadcast,
       onDisconnect: widget.onDisconnect,
       onLogout: widget.onLogout,
+      connectionState: widget.connectionState,
+      connected: widget.connected,
+      onReconnect: widget.onConnect,
     );
   }
 }

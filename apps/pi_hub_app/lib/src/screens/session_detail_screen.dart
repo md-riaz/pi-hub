@@ -94,13 +94,13 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   }
 
   List<HubItem> get _items {
-    final items = List<HubItem>.from(widget.session.history);
+    final items = _dedupeHistory(widget.session.history);
     final historyTexts = <String>{
-      for (final item in widget.session.history)
+      for (final item in items)
         if (item.kind == 'user') item.text.trim(),
     };
     final historyCommandIds = <String>{
-      for (final item in widget.session.history)
+      for (final item in items)
         if (item.metadata['commandId'] != null)
           item.metadata['commandId'].toString(),
     };
@@ -130,6 +130,26 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       items.add(widget.session.liveMessage!);
     }
     return items;
+  }
+
+  List<HubItem> _dedupeHistory(List<HubItem> history) {
+    final out = <HubItem>[];
+    final userKeys = <String>{};
+    final commandIds = <String>{};
+    for (final item in history) {
+      final commandId = item.metadata['commandId']?.toString();
+      if (commandId != null && commandId.isNotEmpty) {
+        if (!commandIds.add(commandId)) continue;
+      }
+      if (item.kind == 'user') {
+        final normalized = item.text.trim().replaceAll(RegExp(r'\s+'), ' ');
+        final bucket = (item.timestamp / 30000).floor();
+        final key = '$normalized::$bucket';
+        if (!userKeys.add(key)) continue;
+      }
+      out.add(item);
+    }
+    return out;
   }
 
   String _commandStatusLabel(HubCommand command) {
@@ -181,18 +201,20 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         .map((match) => match.group(1))
         .whereType<String>()
         .toSet();
-    for (
-      var i = callIndex + 1;
-      i < items.length && i <= callIndex + 4;
-      i += 1
-    ) {
+    int? fallback;
+    for (var i = callIndex + 1; i < items.length; i += 1) {
       final candidate = items[i];
+      if (_isToolCall(candidate)) break;
       if (!_isToolResult(candidate)) continue;
       final toolCallId = candidate.metadata['toolCallId']?.toString();
-      if (toolCallId == null || toolCallId.isEmpty || callIds.isEmpty) return i;
-      if (callIds.contains(toolCallId)) return i;
+      if (toolCallId != null &&
+          toolCallId.isNotEmpty &&
+          callIds.contains(toolCallId)) {
+        return i;
+      }
+      fallback ??= i;
     }
-    return null;
+    return fallback;
   }
 
   bool _isAtBottom = true;

@@ -11,6 +11,9 @@ class SessionListScreen extends StatefulWidget {
   final VoidCallback? onBroadcast;
   final VoidCallback? onDisconnect;
   final VoidCallback? onLogout;
+  final String connectionState;
+  final bool connected;
+  final VoidCallback? onReconnect;
 
   const SessionListScreen({
     super.key,
@@ -21,6 +24,9 @@ class SessionListScreen extends StatefulWidget {
     this.onBroadcast,
     this.onDisconnect,
     this.onLogout,
+    this.connectionState = 'Live',
+    this.connected = true,
+    this.onReconnect,
   });
 
   @override
@@ -148,7 +154,7 @@ class _SessionListScreenState extends State<SessionListScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text(
-                              'Pi Hub',
+                              'Pi Mobile Companion',
                               style: TextStyle(
                                 color: HubTheme.text,
                                 fontSize: 18,
@@ -163,17 +169,10 @@ class _SessionListScreenState extends State<SessionListScreen> {
                           ],
                         ),
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: HubTheme.panel,
-                          border: Border.all(color: HubTheme.softLine),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: const StatusDot(state: 'live'),
+                      _HeaderConnectionPill(
+                        state: widget.connectionState,
+                        connected: widget.connected,
+                        onReconnect: widget.onReconnect,
                       ),
                       const SizedBox(width: 8),
                       IconButton(
@@ -297,6 +296,71 @@ class _SessionListScreenState extends State<SessionListScreen> {
             child: const Icon(Icons.send, size: 17, color: Color(0xFF06111F)),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _HeaderConnectionPill extends StatelessWidget {
+  final String state;
+  final bool connected;
+  final VoidCallback? onReconnect;
+
+  const _HeaderConnectionPill({
+    required this.state,
+    required this.connected,
+    this.onReconnect,
+  });
+
+  bool get _busy {
+    final lower = state.toLowerCase();
+    return lower.contains('connecting') || lower.contains('reconnect');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final lower = state.toLowerCase();
+    final isError =
+        !connected || lower.contains('failed') || lower.contains('error');
+    final color = isError
+        ? HubTheme.red
+        : (_busy ? HubTheme.yellow : HubTheme.green);
+    final label = isError
+        ? 'Offline'
+        : _busy
+        ? 'Connecting'
+        : 'Live';
+    return GestureDetector(
+      onTap: isError || _busy ? onReconnect : null,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          border: Border.all(color: color.withOpacity(0.35)),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_busy)
+              SizedBox(
+                width: 10,
+                height: 10,
+                child: CircularProgressIndicator(strokeWidth: 2, color: color),
+              )
+            else
+              StatusDot(state: isError ? 'offline' : 'live'),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
