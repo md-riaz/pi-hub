@@ -89,14 +89,19 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     final modelNames = widget.availableModels.map((m) => m.id).toList();
     if (modelNames.isEmpty && _currentModel.isNotEmpty) modelNames.add(_currentModel);
 
-    return Scaffold(
-      backgroundColor: HubTheme.bg,
-      appBar: AppBar(
-        backgroundColor: HubTheme.panel,
-        leading: IconButton(
-          icon: const Icon(Icons.chevron_left, color: HubTheme.text),
-          onPressed: () => Navigator.pop(context),
-        ),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) Navigator.pop(context);
+      },
+      child: Scaffold(
+        backgroundColor: HubTheme.bg,
+        appBar: AppBar(
+          backgroundColor: HubTheme.panel,
+          leading: IconButton(
+            icon: const Icon(Icons.chevron_left, color: HubTheme.text),
+            onPressed: () => Navigator.pop(context),
+          ),
         title: Row(
           children: [
             Expanded(
@@ -200,6 +205,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                 : null,
           ),
         ],
+      ),
       ),
     );
   }

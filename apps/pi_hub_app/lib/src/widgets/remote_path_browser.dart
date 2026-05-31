@@ -51,8 +51,15 @@ class _RemotePathBrowserState extends State<RemotePathBrowser> {
       });
     } catch (e) {
       if (!mounted) return;
+      final msg = e.toString();
+      final friendly = msg.contains('404') || msg.contains('not found')
+          ? 'Server browse not available. Update hub server to latest version.'
+          : msg.contains('400') ? 'Invalid directory path.'
+          : msg.contains('timed out') || msg.contains('timeout')
+              ? 'Connection timed out. Check network.'
+              : 'Failed to browse: $msg';
       setState(() {
-        _error = e.toString();
+        _error = friendly;
         _loading = false;
         _entries = [];
       });

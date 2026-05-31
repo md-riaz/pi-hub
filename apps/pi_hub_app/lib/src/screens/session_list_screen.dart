@@ -78,104 +78,106 @@ class _SessionListScreenState extends State<SessionListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: HubTheme.bg,
-      body: Column(
-        children: [
-          // Header
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-            decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: HubTheme.softLine))),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 32, height: 32,
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(colors: [Color(0xFF17243B), Color(0xFF281C45)]),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: HubTheme.line),
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Header
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: HubTheme.softLine))),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 32, height: 32,
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(colors: [Color(0xFF17243B), Color(0xFF281C45)]),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: HubTheme.line),
+                        ),
+                        child: const Center(child: Text('π', style: TextStyle(color: HubTheme.blue, fontSize: 18, fontWeight: FontWeight.bold, fontFamily: 'monospace'))),
                       ),
-                      child: const Center(child: Text('π', style: TextStyle(color: HubTheme.blue, fontSize: 18, fontWeight: FontWeight.bold, fontFamily: 'monospace'))),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Pi Hub', style: TextStyle(color: HubTheme.text, fontSize: 18, fontWeight: FontWeight.w600)),
-                          Text(widget.connectionUrl, style: HubTheme.monoSmall, overflow: TextOverflow.ellipsis),
-                        ],
-                      ),
-                    ),
-                    GestureDetector(
-                      onTap: widget.onDisconnect,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(color: HubTheme.panel, border: Border.all(color: HubTheme.softLine), borderRadius: BorderRadius.circular(999)),
-                        child: const StatusDot(state: 'live'),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                // Search
-                TextField(
-                  onChanged: (v) => setState(() => _query = v),
-                  style: const TextStyle(color: HubTheme.text, fontSize: 14),
-                  decoration: InputDecoration(
-                    hintText: 'Search sessions, files, outputs',
-                    hintStyle: const TextStyle(color: HubTheme.text3),
-                    prefixIcon: const Icon(Icons.search, size: 17, color: HubTheme.text3),
-                    filled: true,
-                    fillColor: HubTheme.panel2,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: HubTheme.softLine)),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: HubTheme.softLine)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                // Filters
-                Row(
-                  children: ['All', 'Running', 'Waiting', 'Idle'].map((f) {
-                    final count = _countForFilter(f);
-                    final selected = _filter == f;
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: GestureDetector(
-                        onTap: () => setState(() => _filter = f),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: HubTheme.panel,
-                            border: Border.all(color: HubTheme.softLine),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text('$f $count', style: TextStyle(
-                            color: selected ? HubTheme.text : HubTheme.text2,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                          )),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Pi Hub', style: TextStyle(color: HubTheme.text, fontSize: 18, fontWeight: FontWeight.w600)),
+                            Text(widget.connectionUrl, style: HubTheme.monoSmall, overflow: TextOverflow.ellipsis),
+                          ],
                         ),
                       ),
-                    );
-                  }).toList(),
-                ),
-              ],
-            ),
-          ),
-          // Session list
-          Expanded(
-            child: _filtered.isEmpty
-                ? Center(child: Text('No sessions found', style: HubTheme.caption))
-                : ListView.builder(
-                    itemCount: _filtered.length,
-                    itemBuilder: (context, index) => _SessionCard(
-                      session: _filtered[index],
-                      onTap: () => widget.onOpenSession(_filtered[index].id),
+                      GestureDetector(
+                        onTap: widget.onDisconnect,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(color: HubTheme.panel, border: Border.all(color: HubTheme.softLine), borderRadius: BorderRadius.circular(999)),
+                          child: const StatusDot(state: 'live'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  // Search
+                  TextField(
+                    onChanged: (v) => setState(() => _query = v),
+                    style: const TextStyle(color: HubTheme.text, fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: 'Search sessions, files, outputs',
+                      hintStyle: const TextStyle(color: HubTheme.text3),
+                      prefixIcon: const Icon(Icons.search, size: 17, color: HubTheme.text3),
+                      filled: true,
+                      fillColor: HubTheme.panel2,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: HubTheme.softLine)),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: HubTheme.softLine)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                     ),
                   ),
-          ),
-        ],
+                  const SizedBox(height: 12),
+                  // Filters
+                  Row(
+                    children: ['All', 'Running', 'Waiting', 'Idle'].map((f) {
+                      final count = _countForFilter(f);
+                      final selected = _filter == f;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: GestureDetector(
+                          onTap: () => setState(() => _filter = f),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: HubTheme.panel,
+                              border: Border.all(color: HubTheme.softLine),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text('$f $count', style: TextStyle(
+                              color: selected ? HubTheme.text : HubTheme.text2,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                            )),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ),
+            ),
+            // Session list
+            Expanded(
+              child: _filtered.isEmpty
+                  ? Center(child: Text('No sessions found', style: HubTheme.caption))
+                  : ListView.builder(
+                      itemCount: _filtered.length,
+                      itemBuilder: (context, index) => _SessionCard(
+                        session: _filtered[index],
+                        onTap: () => widget.onOpenSession(_filtered[index].id),
+                      ),
+                    ),
+            ),
+          ],
+        ),
       ),
       floatingActionButton: Column(
         mainAxisSize: MainAxisSize.min,
