@@ -356,12 +356,27 @@ function clientMetadata() {
 	};
 }
 
-function slashCommandSummaries(pi: ExtensionAPI): Array<{ name: string; description?: string }> {
+function slashCommandSummaries(pi: ExtensionAPI): Array<{ name: string; description?: string; argumentCompletions?: Array<{ value: string; label?: string }> }> {
 	try {
-		return pi.getCommands().map((command: any) => ({
-			name: String(command.invocationName || command.name || ""),
-			description: typeof command.description === "string" ? command.description : undefined,
-		})).filter(command => command.name);
+		return pi.getCommands().map((command: any) => {
+			let argumentCompletions: Array<{ value: string; label?: string }> = [];
+			if (typeof command.getArgumentCompletions === "function") {
+				try {
+					const raw = command.getArgumentCompletions("");
+					if (Array.isArray(raw)) {
+						argumentCompletions = raw.map((item: any) => {
+							if (typeof item === "string") return { value: item, label: item };
+							return { value: String(item?.value || item?.label || ""), label: typeof item?.label === "string" ? item.label : undefined };
+						}).filter((item) => item.value);
+					}
+				} catch {}
+			}
+			return {
+				name: String(command.invocationName || command.name || ""),
+				description: typeof command.description === "string" ? command.description : undefined,
+				argumentCompletions,
+			};
+		}).filter(command => command.name);
 	} catch {
 		return [];
 	}
@@ -485,7 +500,37 @@ export default function piHubExtension(pi: ExtensionAPI) {
 		await sendEvent(payload);
 	}
 
-	async function handleCollaborationMessage(command: any): Promise<void> {
+	async function handleSlashCommand(command: any): Promise<void> {
+	const text = typeof command?.text === "string" ? command.text.trim() : "";
+	if (!text.startsWith("/")) throw new Error("slash command text required");
+	const withoutSlash = text.slice(1).trim();
+	const [name = "", ...restParts] = withoutSlash.split(/\s+/);
+	if (!name) throw new Error("slash command name required");
+	const args = restParts.join(" ");
+	const ctx = liveCtx();
+	if (!ctx) throw new Error("session not available");
+	const slash = slashCommandSummaries(pi).find((candidate) => candidate.name === name || candidate.name === `/${name}`);
+	if (!slash) throw new Error(`Slash command /${name} is not available`);
+	const commandDef = pi.getCommands().find((candidate: any) => String(candidate.invocationName || candidate.name || "") === name || String(candidate.invocationName || candidate.name || "") === `/${name}`) as any;
+	const handler = commandDef?.handler || commandDef?.execute || commandDef?.run;
+	if (typeof handler !== "function") throw new Error(`Slash command /${name} cannot be executed by Pi Hub`);
+	await Promise.resolve(handler.call(commandDef, args, ctx));
+	await sendEvent({
+		type: "input",
+		item: {
+			id: `slash-input-${command.id || Date.now()}`,
+			kind: "user",
+			role: "user",
+			timestamp: Date.now(),
+			text,
+			metadata: { source: "mobile", commandId: command.id, slash: true },
+		},
+		source: "mobile",
+		commandId: command.id,
+	});
+}
+
+async function handleCollaborationMessage(command: any): Promise<void> {
 		const text = typeof command?.text === "string" ? command.text.trim() : "";
 		if (!text) throw new Error("collaboration message text required");
 		const collaborationId = String(command?.collaborationId || command?.id || "unknown");
@@ -573,6 +618,12 @@ export default function piHubExtension(pi: ExtensionAPI) {
 			const commands = Array.isArray(data?.commands) ? data.commands : [];
 			for (const command of commands) {
 				try {
+					if (command?.type === "slash_command") {
+						await handleSlashCommand(command);
+						await sendCommandResult(command, true);
+						continue;
+					}
+
 					if (command?.type === "user_message") {
 						if (typeof command.text !== "string" || !command.text.trim()) throw new Error("text required");
 						const content = Array.isArray(command.attachments) && command.attachments.length > 0

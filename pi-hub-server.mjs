@@ -1379,7 +1379,8 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 404, { error: "session not found" });
         return;
       }
-      const command = createCommand(sessionId, "user_message", { text });
+      const commandType = text.startsWith("/") ? "slash_command" : "user_message";
+      const command = createCommand(sessionId, commandType, { text });
       const session = getOrCreateSession(sessionId);
       const event = normalizeEvent({ type: "command_queued", command: { id: command.id, type: command.type, timestamp: command.createdAt } }, sessionId, "command_queued");
       session.lastEvent = event;
@@ -1509,7 +1510,8 @@ const server = http.createServer(async (req, res) => {
         .map(part => part.type === "text" ? part.text : `[Image: ${savedAttachments.find(att => att.mimeType === part.mimeType)?.name || "image"}]`)
         .filter(Boolean)
         .join("\n\n");
-      const command = createCommand(sessionId, "user_message", {
+      const commandType = messageText.trim().startsWith("/") ? "slash_command" : "user_message";
+      const command = createCommand(sessionId, commandType, {
         text: messageText,
         attachments: content,
         savedAttachments,

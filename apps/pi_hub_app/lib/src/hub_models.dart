@@ -459,10 +459,15 @@ class HubModel {
 }
 
 class HubSlashCommand {
-  HubSlashCommand({required this.name, this.description});
+  HubSlashCommand({
+    required this.name,
+    this.description,
+    this.argumentCompletions = const [],
+  });
 
   final String name;
   final String? description;
+  final List<HubSlashArgumentCompletion> argumentCompletions;
 
   String get invocation => name.startsWith('/') ? name : '/$name';
 
@@ -470,6 +475,23 @@ class HubSlashCommand {
     return HubSlashCommand(
       name: json['name']?.toString() ?? '',
       description: json['description']?.toString(),
+      argumentCompletions: _mapList(
+        json['argumentCompletions'],
+      ).map(HubSlashArgumentCompletion.fromJson).toList(),
+    );
+  }
+}
+
+class HubSlashArgumentCompletion {
+  HubSlashArgumentCompletion({required this.value, this.label});
+
+  final String value;
+  final String? label;
+
+  factory HubSlashArgumentCompletion.fromJson(Map<String, dynamic> json) {
+    return HubSlashArgumentCompletion(
+      value: json['value']?.toString() ?? '',
+      label: json['label']?.toString(),
     );
   }
 }

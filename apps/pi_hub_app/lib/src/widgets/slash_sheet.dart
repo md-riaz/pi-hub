@@ -28,6 +28,18 @@ class SlashSheet extends StatefulWidget {
   State<SlashSheet> createState() => _SlashSheetState();
 }
 
+class _ArgumentSuggestion {
+  final HubSlashCommand command;
+  final String value;
+  final String? label;
+
+  const _ArgumentSuggestion({
+    required this.command,
+    required this.value,
+    this.label,
+  });
+}
+
 class _SlashSheetState extends State<SlashSheet> {
   final _controller = TextEditingController(text: '/');
   String _query = '/';
@@ -70,6 +82,43 @@ class _SlashSheetState extends State<SlashSheet> {
     }).toList();
   }
 
+  List<_ArgumentSuggestion> get _argumentSuggestions {
+    final current = _controller.text.trimLeft();
+    final parts = current.split(RegExp(r'\s+'));
+    if (parts.length < 2) return const [];
+    final commandToken = parts.first.startsWith('/')
+        ? parts.first
+        : '/${parts.first}';
+    final command = widget.commands
+        .where((item) => item.invocation == commandToken)
+        .firstOrNull;
+    if (command == null || command.argumentCompletions.isEmpty) return const [];
+    final prefix = parts.skip(1).join(' ').toLowerCase();
+    return command.argumentCompletions
+        .where(
+          (item) =>
+              prefix.isEmpty ||
+              item.value.toLowerCase().startsWith(prefix) ||
+              item.value.toLowerCase().contains(prefix),
+        )
+        .map(
+          (item) => _ArgumentSuggestion(
+            command: command,
+            value: item.value,
+            label: item.label,
+          ),
+        )
+        .toList();
+  }
+
+  void _completeArgument(_ArgumentSuggestion suggestion) {
+    final value = '${suggestion.command.invocation} ${suggestion.value} ';
+    _controller.value = TextEditingValue(
+      text: value,
+      selection: TextSelection.collapsed(offset: value.length),
+    );
+  }
+
   void _complete(HubSlashCommand command) {
     final current = _controller.text;
     final parts = current.trimLeft().split(RegExp(r'\s+'));
@@ -84,6 +133,7 @@ class _SlashSheetState extends State<SlashSheet> {
   @override
   Widget build(BuildContext context) {
     final suggestions = _suggestions;
+    final argumentSuggestions = _argumentSuggestions;
     return Padding(
       padding: EdgeInsets.only(
         bottom: MediaQuery.of(context).viewInsets.bottom,
@@ -149,7 +199,70 @@ class _SlashSheetState extends State<SlashSheet> {
               textInputAction: TextInputAction.send,
               onSubmitted: (_) => _send(),
             ),
-            if (suggestions.isNotEmpty) ...[
+            if (argumentSuggestions.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 220),
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: argumentSuggestions.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  itemBuilder: (context, index) {
+                    final suggestion = argumentSuggestions[index];
+                    return GestureDetector(
+                      onTap: () => _completeArgument(suggestion),
+                      onLongPress: () => _send(
+                        '${suggestion.command.invocation} ${suggestion.value}',
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: HubTheme.card,
+                          border: Border.all(color: HubTheme.softLine),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.subdirectory_arrow_right,
+                              size: 14,
+                              color: HubTheme.cyan,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                suggestion.value,
+                                style: const TextStyle(
+                                  color: HubTheme.cyan,
+                                  fontSize: 13,
+                                  fontFamily: 'monospace',
+                                ),
+                              ),
+                            ),
+                            if (suggestion.label?.isNotEmpty == true)
+                              Text(
+                                suggestion.label!,
+                                style: const TextStyle(
+                                  color: HubTheme.text3,
+                                  fontSize: 11,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Tap to complete argument · long press to send',
+                style: TextStyle(color: HubTheme.text3, fontSize: 11),
+              ),
+            ] else if (suggestions.isNotEmpty) ...[
               const SizedBox(height: 10),
               ConstrainedBox(
                 constraints: const BoxConstraints(maxHeight: 260),

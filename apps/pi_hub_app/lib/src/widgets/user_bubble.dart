@@ -46,11 +46,11 @@ class UserBubble extends StatelessWidget {
             ],
           ),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               InlineMarkdownText(
                 text: text,
-                textAlign: TextAlign.end,
+                textAlign: TextAlign.start,
                 style: const TextStyle(
                   color: Color(0xFF06111F),
                   fontSize: 14,
@@ -61,14 +61,17 @@ class UserBubble extends StatelessWidget {
               ),
               if (time != null || status != null) ...[
                 const SizedBox(height: 4),
-                Text(
-                  [
-                    if (status != null) status!,
-                    if (time != null) time!,
-                  ].join(' · '),
-                  style: TextStyle(
-                    color: const Color(0xFF06111F).withOpacity(0.6),
-                    fontSize: 10,
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    [
+                      if (status != null) status!,
+                      if (time != null) time!,
+                    ].join(' · '),
+                    style: TextStyle(
+                      color: const Color(0xFF06111F).withOpacity(0.6),
+                      fontSize: 10,
+                    ),
                   ),
                 ),
               ],
