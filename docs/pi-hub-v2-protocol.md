@@ -174,13 +174,13 @@ Agent creation is disabled by default. When enabled, mobile submits a bounded re
 }
 ```
 
-Server validates `cwd` under configured workspace roots and spawns the configured Pi command without shell interpolation. Server must reject arbitrary command strings.
+Server resolves `cwd`, requires it to be an existing directory on the hub host, and spawns the configured Pi command without shell interpolation. Server must reject arbitrary command strings.
 
 ## Browse remote directories
 
 `GET /api/v2/browse?path=/home/user/projects` returns directory listing for the host machine. Requires `browse` capability.
 
-Request query params: `?path=<absolute-path>` (defaults to configured workspace root).
+Request query params: `?path=<absolute-path>` (defaults to the hub host home directory when omitted).
 
 Response:
 
@@ -196,7 +196,7 @@ Response:
 }
 ```
 
-Server must reject paths outside configured workspace roots.
+Server resolves the requested path and rejects invalid or non-directory paths.
 
 ## Send attachment
 

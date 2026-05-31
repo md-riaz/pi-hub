@@ -16,7 +16,7 @@ Pi Hub is a local-first mission-control dashboard for Pi Coding Agent sessions. 
 - Server browse endpoint for remote directory listing.
 - Model sheet with scrollable list.
 - Optional provider-neutral push registration with an `ntfy` implementation, disabled by default.
-- Optional guarded agent creation endpoint for allowlisted workspace roots, disabled by default.
+- Optional guarded agent creation endpoint for starting Pi in any existing directory on the hub host, disabled by default.
 - Memory-only hub state by default: no transcript database and no cloud dependency.
 
 ## Architecture
@@ -33,7 +33,7 @@ Hub host
       ├─ token-protected HTTP JSON API
       ├─ SSE live stream for the mobile app
       ├─ in-memory sessions, commands, push devices, and audit ring
-      └─ optional guarded process creation for trusted workspaces
+      └─ optional guarded process creation in existing directories
 
 Android device
   └─ apps/pi_hub_app
@@ -184,7 +184,6 @@ Example:
   "agentCreation": {
     "enabled": false,
     "piCommand": "pi",
-    "workspaceRoots": [],
     "defaultArgs": [],
     "testMode": false
   }
@@ -228,7 +227,7 @@ Provider tokens/topics are not exposed in snapshots; public device records only 
 
 ## Optional agent creation
 
-Agent creation starts a new local process on the hub host. It is disabled by default and restricted to server-side allowlisted workspace roots.
+Agent creation starts a new local process on the hub host. It is disabled by default and accepts any existing directory as the process working directory.
 
 Example configuration:
 
@@ -237,7 +236,6 @@ Example configuration:
   "agentCreation": {
     "enabled": true,
     "piCommand": "pi",
-    "workspaceRoots": ["/home/alice/projects"],
     "defaultArgs": [],
     "testMode": false
   }
@@ -248,10 +246,10 @@ Security model:
 
 - The app cannot choose an arbitrary executable.
 - The server launches `agentCreation.piCommand` with `shell: false`.
-- Requested working directories are resolved and must be inside `workspaceRoots`.
+- Requested working directories are resolved and must already exist as directories on the hub host.
 - Accepted, rejected, succeeded, and failed attempts are recorded in the in-memory audit ring.
 
-Only enable this feature on trusted networks and with a narrow workspace allowlist.
+Only enable this feature on trusted networks. Bearer-token access can start Pi in any existing directory on the hub host.
 
 ## Manual server run
 
@@ -288,7 +286,7 @@ All API routes except `/` require either `Authorization: Bearer <token>` or `?to
 
 - `GET /api/v2/push/devices` — list public push device records and provider status.
 - `POST /api/v2/push/devices` — register/update/disable a push device.
-- `POST /api/v2/agents/create` — guarded agent creation for allowlisted workspace roots.
+- `POST /api/v2/agents/create` — guarded agent creation in any existing directory.
 - `GET /api/v2/browse` — list remote directories.
 - `POST /api/v2/send-attachment` — send files as attachments.
 
@@ -300,7 +298,7 @@ Pi Hub is intended for trusted network environments (LAN, VPN, etc.).
 
 Do not expose the hub directly to the public internet without additional hardening. Before public exposure, add HTTPS, stronger authentication, token rotation, rate limiting, and persistent audit controls.
 
-Protect `~/.pi/agent/pi-hub/config.json`; it contains the bearer token and may contain push provider credentials. If agent creation is enabled, bearer-token access can start new local processes inside configured workspace roots.
+Protect `~/.pi/agent/pi-hub/config.json`; it contains the bearer token and may contain push provider credentials. If agent creation is enabled, bearer-token access can start new local processes in any existing directory on the hub host.
 
 ## Troubleshooting
 
