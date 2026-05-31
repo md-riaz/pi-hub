@@ -165,7 +165,11 @@ class _ComposerState extends State<Composer> {
             ),
             Row(
               children: [
-                _ActionBtn(icon: Icons.attach_file, onTap: widget.onAttachment),
+                _ActionBtn(
+                  icon: Icons.image_outlined,
+                  onTap: widget.onAttachment,
+                  tooltip: 'Attach images',
+                ),
                 _ActionBtn(
                   icon: Icons.keyboard_command_key,
                   onTap: widget.onSlashCommands,
@@ -248,12 +252,10 @@ class _ComposerState extends State<Composer> {
 class _ActionBtn extends StatelessWidget {
   final IconData icon;
   final VoidCallback? onTap;
-  final Color color;
   final String? tooltip;
   const _ActionBtn({
     required this.icon,
     this.onTap,
-    this.color = HubTheme.text2,
     this.tooltip,
   });
 
@@ -264,7 +266,7 @@ class _ActionBtn extends StatelessWidget {
       child: SizedBox(
         width: 36,
         height: 36,
-        child: Icon(icon, size: 18, color: color),
+        child: Icon(icon, size: 18, color: HubTheme.text2),
       ),
     );
     return tooltip == null ? button : Tooltip(message: tooltip!, child: button);
