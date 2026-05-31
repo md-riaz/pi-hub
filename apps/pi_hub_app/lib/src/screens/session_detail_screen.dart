@@ -564,32 +564,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           children: [
             Column(
               children: [
-                // Metadata chips
-                Container(
-                  height: 40,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: const BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(color: HubTheme.softLine),
-                    ),
-                  ),
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    children: [
-                      _Chip(
-                        icon: Icons.account_tree,
-                        text: widget.session.displayName,
-                      ),
-                      const SizedBox(width: 8),
-                      _Chip(icon: Icons.auto_awesome, text: _currentModel),
-                      const SizedBox(width: 8),
-                      _Chip(
-                        icon: Icons.folder,
-                        text: widget.session.cwd.split('/').last,
-                      ),
-                    ],
-                  ),
-                ),
                 // Events
                 Expanded(
                   child: items.isEmpty
@@ -722,35 +696,6 @@ class _InfoRow extends StatelessWidget {
               value,
               style: const TextStyle(color: HubTheme.text, fontSize: 13),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Chip extends StatelessWidget {
-  final IconData icon;
-  final String text;
-  const _Chip({required this.icon, required this.text});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: HubTheme.panel,
-        border: Border.all(color: HubTheme.softLine),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 13, color: HubTheme.text2),
-          const SizedBox(width: 6),
-          Text(
-            text,
-            style: const TextStyle(color: HubTheme.text2, fontSize: 11),
           ),
         ],
       ),
