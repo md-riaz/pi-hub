@@ -36,7 +36,6 @@ const DEFAULT_CONFIG = {
     },
   },
   agentCreation: {
-    enabled: true,
     piCommand: "pi",
     workspaceRoots: [os.homedir()],
     defaultArgs: [],
@@ -51,7 +50,6 @@ function isPlainObject(value) {
 function normalizeAgentCreationConfig(value = {}) {
   const source = isPlainObject(value) ? value : {};
   return {
-    enabled: source.enabled === true,
     piCommand: typeof source.piCommand === "string" && source.piCommand.trim()
       ? source.piCommand.trim()
       : DEFAULT_CONFIG.agentCreation.piCommand,
@@ -223,7 +221,7 @@ function serverCapabilities() {
     eventEnvelope: true,
     health: true,
     commandLifecycle: true,
-    agentCreation: config.agentCreation.enabled,
+    agentCreation: true,
     collaboration: true,
     pushDevices: true,
     pushNotifications: pushProviderStatus(),
@@ -1327,11 +1325,6 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "POST" && url.pathname === "/api/v2/agents/create") {
       const body = await readBody(req);
-      if (!config.agentCreation.enabled) {
-        recordAudit("agent.create.rejected", "Agent creation rejected: disabled", { reason: "disabled", cwd: typeof body.cwd === "string" ? capString(body.cwd, 2000) : null });
-        sendJson(res, 403, { ok: false, error: "agent creation disabled" });
-        return;
-      }
       let request;
       try {
         request = validateAgentCreationRequest(body);

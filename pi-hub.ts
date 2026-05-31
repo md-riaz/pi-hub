@@ -17,7 +17,6 @@ interface PiHubConfig {
 	autoStartServer: boolean;
 	pollIntervalMs: number;
 	agentCreation?: {
-		enabled?: boolean;
 		piCommand?: string;
 		workspaceRoots?: string[];
 		defaultArgs?: string[];
@@ -47,7 +46,6 @@ const DEFAULT_CONFIG: PiHubConfig = {
 	autoStartServer: true,
 	pollIntervalMs: 1500,
 	agentCreation: {
-		enabled: true,
 		piCommand: "pi",
 		workspaceRoots: [homedir()],
 		defaultArgs: [],
@@ -403,28 +401,6 @@ function getLocalAddresses(): string[] {
 	return out;
 }
 
-function firewallHint(config: PiHubConfig): string {
-	const port = config.port;
-	const platform = process.platform;
-
-	let cmd: string;
-	if (platform === "win32") {
-		cmd = `netsh advfirewall firewall add rule name="Pi Hub TCP ${port}" dir=in action=allow protocol=TCP localport=${port}`;
-	} else if (platform === "darwin") {
-		cmd = `echo 'pass in proto tcp from any to any port ${port}' | sudo pfctl -f -`;
-	} else {
-		// Linux and others
-		cmd = `sudo ufw allow ${port}/tcp`;
-	}
-
-	return [
-		`Run this once to allow inbound TCP ${port}:`,
-		cmd,
-		"",
-		"If this is a VPS/cloud host, also allow the same TCP port in the provider firewall/security group.",
-	].join("\n");
-}
-
 function networkHint(config: PiHubConfig): string {
 	const lanIPs = getLocalAddresses();
 	const lanUrls = lanIPs.map((ip: string) => `http://${ip}:${config.port}`).join(", ") || "none detected";
@@ -432,8 +408,6 @@ function networkHint(config: PiHubConfig): string {
 		`Local server: http://127.0.0.1:${config.port}`,
 		`Connect in app: ${lanUrls}`,
 		`Token: ${config.token}`,
-		"",
-		firewallHint(config),
 	].join("\n");
 }
 
@@ -784,9 +758,9 @@ export default function piHubExtension(pi: ExtensionAPI) {
 	}
 
 	pi.registerCommand("hub", {
-		description: "Pi Hub: /hub [info|start|stop|server stop|firewall]",
+		description: "Pi Hub: /hub [info|start|stop|server stop]",
 		getArgumentCompletions(prefix: string) {
-			return ["status", "info", "start", "stop", "server stop", "firewall"].filter((item) => item.startsWith(prefix)).map((value) => ({ value, label: value }));
+			return ["status", "info", "start", "stop", "server stop"].filter((item) => item.startsWith(prefix)).map((value) => ({ value, label: value }));
 		},
 		async handler(args, ctx) {
 			const sub = args.trim().toLowerCase();
@@ -827,10 +801,6 @@ export default function piHubExtension(pi: ExtensionAPI) {
 				}
 				return;
 			}
-			if (sub === "firewall") {
-				ctx.ui.notify(firewallHint(config), "info");
-				return;
-			}
 			if (sub === "info" || sub === "status" || !sub) {
 				const pid = readPid();
 				ctx.ui.notify([
@@ -843,7 +813,7 @@ export default function piHubExtension(pi: ExtensionAPI) {
 				].join("\n"), serverOk ? "info" : "warning");
 				return;
 			}
-			ctx.ui.notify("Unknown /hub command. Use: /hub info, /hub start, /hub stop, /hub server stop, /hub firewall", "warning");
+			ctx.ui.notify("Unknown /hub command. Use: /hub info, /hub start, /hub stop, /hub server stop", "warning");
 		},
 	});
 }

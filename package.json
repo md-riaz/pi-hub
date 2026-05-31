@@ -1,6 +1,6 @@
 {
   "name": "pi-hub-dashboard",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Pi Coding Agent extension and Flutter Android app for monitoring and controlling multiple Pi sessions from a phone over any network.",
   "keywords": [
     "pi-package",
