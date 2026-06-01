@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { homedir, networkInterfaces } from "os";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { spawn, type ChildProcess } from "child_process";
@@ -75,6 +75,23 @@ function configPath(): string {
 
 function pidPath(): string {
 	return join(hubDir(), "server.pid");
+}
+
+function manualServerStopPath(): string {
+	return join(hubDir(), "server.manual-stop");
+}
+
+function isServerManuallyStopped(): boolean {
+	return existsSync(manualServerStopPath());
+}
+
+function markServerManuallyStopped(): void {
+	mkdirSync(hubDir(), { recursive: true });
+	writeFileSync(manualServerStopPath(), new Date().toISOString());
+}
+
+function clearServerManualStop(): void {
+	try { unlinkSync(manualServerStopPath()); } catch {}
 }
 
 function loadConfig(): PiHubConfig {
@@ -173,6 +190,9 @@ async function waitForServer(config: PiHubConfig, timeoutMs = 5000): Promise<voi
 }
 
 async function ensureServer(config: PiHubConfig): Promise<void> {
+	if (isServerManuallyStopped()) {
+		throw new Error("Pi Hub server was manually stopped. Run /hub start to enable auto-start again.");
+	}
 	try {
 		const response = await fetch(`${serverBaseUrl(config)}/api/health?token=${encodeURIComponent(config.token)}`, {
 			signal: AbortSignal.timeout(1000),
@@ -507,6 +527,7 @@ export default function piHubExtension(pi: ExtensionAPI) {
 	let connectTimer: ReturnType<typeof setTimeout> | null = null;
 	let presenceTimer: ReturnType<typeof setInterval> | null = null;
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
+	let monitorTimer: ReturnType<typeof setInterval> | null = null;
 	const toolNames = new Map<string, string>();
 	const pendingMobileInputs: PendingMobileInput[] = [];
 	let serverOk = false;
@@ -621,6 +642,7 @@ export default function piHubExtension(pi: ExtensionAPI) {
 	if (name === "hub") {
 		const sub = args.trim().toLowerCase();
 		if (sub === "start") {
+			clearServerManualStop();
 			await ensureServer(config);
 			serverOk = true;
 			startBackgroundLoops();
@@ -630,6 +652,7 @@ export default function piHubExtension(pi: ExtensionAPI) {
 			await disconnectSession();
 			notifyFallback("Disconnected this session from Pi Hub. Server still running for other sessions.", "info");
 		} else if (sub === "server stop") {
+			markServerManuallyStopped();
 			const pid = readPid();
 			await disconnectSession();
 			if (pid && isProcessRunning(pid)) process.kill(pid);
@@ -700,6 +723,22 @@ async function handleCollaborationMessage(command: any): Promise<void> {
 		});
 	}
 
+	async function monitorServer(): Promise<void> {
+		if (!config.enabled || isServerManuallyStopped()) return;
+		const ctx = liveCtx();
+		if (!ctx) return;
+		if (serverOk) return;
+		try {
+			await ensureServer(config);
+			serverOk = true;
+			await register(ctx);
+			setUiStatus("Hub ✓");
+		} catch {
+			serverOk = false;
+			setUiStatus("Hub ✗");
+		}
+	}
+
 	async function sendPresence(): Promise<void> {
 		const ctx = liveCtx();
 		if (!ctx || !serverOk) return;
@@ -742,8 +781,11 @@ async function handleCollaborationMessage(command: any): Promise<void> {
 	function startBackgroundLoops(): void {
 		if (presenceTimer) clearInterval(presenceTimer);
 		if (pollTimer) clearInterval(pollTimer);
+		if (monitorTimer) clearInterval(monitorTimer);
 		presenceTimer = setInterval(() => void sendPresence(), 10_000);
 		pollTimer = setInterval(() => void pollCommands(), config.pollIntervalMs);
+		monitorTimer = setInterval(() => void monitorServer(), 5_000);
+		void monitorServer();
 		void sendPresence();
 		void pollCommands();
 	}
@@ -857,6 +899,7 @@ async function handleCollaborationMessage(command: any): Promise<void> {
 		if (connectTimer) clearTimeout(connectTimer);
 		if (presenceTimer) clearInterval(presenceTimer);
 		if (pollTimer) clearInterval(pollTimer);
+		if (monitorTimer) clearInterval(monitorTimer);
 		if (config.enabled && sessionId && serverOk) {
 			try { await post(config, "/api/unregister", { sessionId }); } catch {}
 		}
@@ -952,8 +995,10 @@ async function handleCollaborationMessage(command: any): Promise<void> {
 		setUiStatus("Hub ✗");
 		if (presenceTimer) clearInterval(presenceTimer);
 		if (pollTimer) clearInterval(pollTimer);
+		if (monitorTimer) clearInterval(monitorTimer);
 		presenceTimer = null;
 		pollTimer = null;
+		monitorTimer = null;
 	}
 
 	pi.registerCommand("hub", {
@@ -965,6 +1010,7 @@ async function handleCollaborationMessage(command: any): Promise<void> {
 			const sub = args.trim().toLowerCase();
 			if (sub === "start") {
 				try {
+					clearServerManualStop();
 					await ensureServer(config);
 					serverOk = true;
 					startBackgroundLoops();
@@ -985,6 +1031,7 @@ async function handleCollaborationMessage(command: any): Promise<void> {
 				return;
 			}
 			if (sub === "server stop") {
+				markServerManuallyStopped();
 				const pid = readPid();
 				if (pid && isProcessRunning(pid)) {
 					await disconnectSession();
