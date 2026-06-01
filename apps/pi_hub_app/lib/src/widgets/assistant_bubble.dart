@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'inline_markdown_text.dart';
 
 class AssistantBubble extends StatefulWidget {
@@ -36,6 +37,17 @@ class _AssistantBubbleState extends State<AssistantBubble>
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+
+  Future<void> _copyMessage(BuildContext context) async {
+    await Clipboard.setData(ClipboardData(text: widget.text));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Assistant message copied'),
+        duration: Duration(seconds: 1),
+      ),
+    );
   }
 
   @override
@@ -76,6 +88,19 @@ class _AssistantBubbleState extends State<AssistantBubble>
                     fontSize: 10,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 1,
+                  ),
+                ),
+                const Spacer(),
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _copyMessage(context),
+                  child: const Padding(
+                    padding: EdgeInsets.all(4),
+                    child: Icon(
+                      Icons.copy_outlined,
+                      size: 14,
+                      color: Color(0xFF68768B),
+                    ),
                   ),
                 ),
               ],

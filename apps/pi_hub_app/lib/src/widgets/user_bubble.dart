@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'inline_markdown_text.dart';
 
 class UserBubble extends StatelessWidget {
@@ -15,6 +16,17 @@ class UserBubble extends StatelessWidget {
     this.onTap,
     this.onLongPress,
   });
+
+  Future<void> _copyMessage(BuildContext context) async {
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('User message copied'),
+        duration: Duration(seconds: 1),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -48,16 +60,38 @@ class UserBubble extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              InlineMarkdownText(
-                text: text,
-                textAlign: TextAlign.start,
-                style: const TextStyle(
-                  color: Color(0xFF06111F),
-                  fontSize: 14,
-                  height: 1.5,
-                ),
-                codeBackground: const Color(0xFF06111F).withValues(alpha: 0.12),
-                codeForeground: const Color(0xFF06111F),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: InlineMarkdownText(
+                      text: text,
+                      textAlign: TextAlign.start,
+                      style: const TextStyle(
+                        color: Color(0xFF06111F),
+                        fontSize: 14,
+                        height: 1.5,
+                      ),
+                      codeBackground: const Color(
+                        0xFF06111F,
+                      ).withValues(alpha: 0.12),
+                      codeForeground: const Color(0xFF06111F),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => _copyMessage(context),
+                    child: Padding(
+                      padding: const EdgeInsets.all(2),
+                      child: Icon(
+                        Icons.copy_outlined,
+                        size: 14,
+                        color: const Color(0xFF06111F).withValues(alpha: 0.62),
+                      ),
+                    ),
+                  ),
+                ],
               ),
               if (time != null || status != null) ...[
                 const SizedBox(height: 4),
