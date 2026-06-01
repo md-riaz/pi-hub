@@ -128,6 +128,7 @@ const commands = new Map();
 const pushDevices = new Map();
 const auditEvents = [];
 const watchers = new Set();
+const MAX_WATCHERS = 25;
 const PENDING_COMMAND_STATUSES = new Set(["queued", "delivered"]);
 let eventSeq = 0;
 let normalizedEventSeq = 0;
@@ -1248,6 +1249,11 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && url.pathname === "/api/stream") {
+      if (watchers.size >= MAX_WATCHERS) {
+        const oldest = watchers.values().next().value;
+        try { oldest.end(); } catch {}
+        watchers.delete(oldest);
+      }
       req.socket?.setNoDelay?.(true);
       res.writeHead(200, {
         "content-type": "text/event-stream; charset=utf-8",
@@ -1454,19 +1460,21 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 400, { error: "invalid directory path" });
         return;
       }
+      const limit = 500;
       const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-      const items = entries
-        .filter(e => !e.name.startsWith("."))
+      const visibleEntries = entries.filter(e => !e.name.startsWith("."));
+      const items = visibleEntries
+        .sort((a, b) => {
+          if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1;
+          return a.name.localeCompare(b.name);
+        })
+        .slice(0, limit)
         .map(e => ({
           name: e.name,
           path: path.join(dirPath, e.name),
           isDirectory: e.isDirectory(),
-        }))
-        .sort((a, b) => {
-          if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
-          return a.name.localeCompare(b.name);
-        });
-      sendJson(res, 200, { ok: true, path: dirPath, parent: path.dirname(dirPath), items });
+        }));
+      sendJson(res, 200, { ok: true, path: dirPath, parent: path.dirname(dirPath), items, truncated: visibleEntries.length > limit, total: visibleEntries.length, limit });
       return;
     }
 
@@ -1552,7 +1560,7 @@ const server = http.createServer(async (req, res) => {
 
 server.on("error", error => {
   console.error("Pi Hub server error:", error);
-  process.exitCode = 1;
+  process.exit(1);
 });
 
 process.on("SIGTERM", shutdown);

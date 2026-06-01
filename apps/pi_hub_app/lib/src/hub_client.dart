@@ -28,38 +28,6 @@ class AgentCreateRequest {
   }
 }
 
-class PushDeviceRegistration {
-  PushDeviceRegistration({
-    required this.deviceId,
-    required this.platform,
-    required this.provider,
-    required this.token,
-    this.enabled = true,
-    this.scopes = const ['critical', 'approval', 'diff_review'],
-    this.label = '',
-  });
-
-  final String deviceId;
-  final String platform;
-  final String provider;
-  final String token;
-  final bool enabled;
-  final List<String> scopes;
-  final String label;
-
-  Map<String, Object?> toJson() {
-    return {
-      'deviceId': deviceId,
-      'platform': platform,
-      'provider': provider,
-      if (token.trim().isNotEmpty) 'token': token.trim(),
-      'enabled': enabled,
-      'scopes': scopes,
-      if (label.trim().isNotEmpty) 'label': label.trim(),
-    };
-  }
-}
-
 class AgentCreateResult {
   AgentCreateResult({
     required this.status,
@@ -249,65 +217,6 @@ class HubClient {
     }
   }
 
-  Future<HubDiffReview> respondToDiffReview(
-    String id,
-    String action, {
-    String comment = '',
-  }) async {
-    final client = _newHttpClient();
-    try {
-      final request = await client.postUrl(
-        Uri.parse(
-          '$baseUrl/api/v2/diff-reviews/${Uri.encodeComponent(id)}/respond',
-        ),
-      );
-      request.headers.contentType = ContentType.json;
-      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
-      request.write(jsonEncode({'action': action, 'comment': comment}));
-      final response = await request.close();
-      final body = await response.transform(utf8.decoder).join();
-      if (response.statusCode != 200) {
-        throw Exception('${response.statusCode}: $body');
-      }
-      final data = jsonDecode(body);
-      if (data is! Map || data['diffReview'] is! Map) {
-        throw Exception('Invalid diff review response');
-      }
-      return HubDiffReview.fromJson(_stringKeyMap(data['diffReview'] as Map));
-    } finally {
-      client.close(force: true);
-    }
-  }
-
-  Future<List<HubInboxItem>> markInboxRead(String id) async {
-    final data = await _postJson('/api/v2/inbox/read', {
-      'ids': [id],
-    });
-    if (data['inboxItems'] is! List) return const [];
-    return [
-      for (final item in data['inboxItems'] as List)
-        if (item is Map) HubInboxItem.fromJson(_stringKeyMap(item)),
-    ];
-  }
-
-  Future<HubApprovalRequest?> respondToApproval(
-    String approvalId,
-    String response, {
-    String comment = '',
-  }) async {
-    final data = await _postJson(
-      '/api/v2/approvals/${Uri.encodeComponent(approvalId)}/respond',
-      {
-        'response': response,
-        if (comment.trim().isNotEmpty) 'comment': comment.trim(),
-      },
-    );
-    final approval = data['approval'];
-    return approval is Map
-        ? HubApprovalRequest.fromJson(_stringKeyMap(approval))
-        : null;
-  }
-
   Future<Map<String, dynamic>> _postJson(
     String path,
     Map<String, Object?> payload,
@@ -328,25 +237,6 @@ class HubClient {
     } finally {
       client.close(force: true);
     }
-  }
-
-  Future<HubPushDevice> registerPushDevice(
-    PushDeviceRegistration registration,
-  ) async {
-    final data = await _postJson('/api/v2/push/devices', registration.toJson());
-    final device = data['pushDevice'];
-    if (device is Map) return HubPushDevice.fromJson(_stringKeyMap(device));
-    throw Exception('Invalid push device response');
-  }
-
-  Future<HubPushDevice> disablePushDevice(String deviceId) async {
-    final data = await _postJson('/api/v2/push/devices', {
-      'action': 'disable',
-      'deviceId': deviceId,
-    });
-    final device = data['pushDevice'];
-    if (device is Map) return HubPushDevice.fromJson(_stringKeyMap(device));
-    throw Exception('Invalid push device response');
   }
 
   Future<AgentCreateResult> createAgent(AgentCreateRequest requestBody) async {

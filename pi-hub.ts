@@ -41,7 +41,7 @@ interface PendingMobileInput {
 }
 
 const HUB_PROTOCOL_VERSION = 2;
-const HUB_CLIENT_VERSION = "0.1.0";
+const HUB_CLIENT_VERSION = "0.1.4";
 const HUB_CLIENT_NAME = "pi-hub-extension";
 
 const DEFAULT_CONFIG: PiHubConfig = {
@@ -100,6 +100,7 @@ function loadConfig(): PiHubConfig {
 	try {
 		config = { ...config, ...JSON.parse(readFileSync(configPath(), "utf8")) };
 	} catch {}
+	if (!config.autoStartServer) clearServerManualStop();
 	if (!config.token) {
 		config.token = randomUUID().replace(/-/g, "") + randomUUID().replace(/-/g, "").slice(0, 16);
 	}
@@ -108,6 +109,10 @@ function loadConfig(): PiHubConfig {
 	config.pollIntervalMs = Math.max(500, Number(config.pollIntervalMs) || DEFAULT_CONFIG.pollIntervalMs);
 	writeFileSync(configPath(), JSON.stringify(config, null, 2));
 	return config;
+}
+
+function serverAutoStartAllowed(config: PiHubConfig): boolean {
+	return config.autoStartServer && !isServerManuallyStopped();
 }
 
 function serverBaseUrl(config: PiHubConfig): string {
@@ -190,9 +195,6 @@ async function waitForServer(config: PiHubConfig, timeoutMs = 5000): Promise<voi
 }
 
 async function ensureServer(config: PiHubConfig): Promise<void> {
-	if (isServerManuallyStopped()) {
-		throw new Error("Pi Hub server was manually stopped. Run /hub start to enable auto-start again.");
-	}
 	try {
 		const response = await fetch(`${serverBaseUrl(config)}/api/health?token=${encodeURIComponent(config.token)}`, {
 			signal: AbortSignal.timeout(1000),
@@ -208,6 +210,9 @@ async function ensureServer(config: PiHubConfig): Promise<void> {
 
 	if (!config.autoStartServer) {
 		throw new Error("Pi Hub server is not running and autoStartServer=false");
+	}
+	if (isServerManuallyStopped()) {
+		throw new Error("Pi Hub server was manually stopped. Run /hub start to enable auto-start again.");
 	}
 
 	const child = spawnServer(config);
@@ -528,6 +533,9 @@ export default function piHubExtension(pi: ExtensionAPI) {
 	let presenceTimer: ReturnType<typeof setInterval> | null = null;
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
 	let monitorTimer: ReturnType<typeof setInterval> | null = null;
+	let presenceInFlight = false;
+	let pollInFlight = false;
+	let monitorInFlight = false;
 	const toolNames = new Map<string, string>();
 	const pendingMobileInputs: PendingMobileInput[] = [];
 	let serverOk = false;
@@ -724,10 +732,10 @@ async function handleCollaborationMessage(command: any): Promise<void> {
 	}
 
 	async function monitorServer(): Promise<void> {
-		if (!config.enabled || isServerManuallyStopped()) return;
+		if (monitorInFlight || !config.enabled || serverOk || !serverAutoStartAllowed(config)) return;
 		const ctx = liveCtx();
 		if (!ctx) return;
-		if (serverOk) return;
+		monitorInFlight = true;
 		try {
 			await ensureServer(config);
 			serverOk = true;
@@ -736,12 +744,15 @@ async function handleCollaborationMessage(command: any): Promise<void> {
 		} catch {
 			serverOk = false;
 			setUiStatus("Hub ✗");
+		} finally {
+			monitorInFlight = false;
 		}
 	}
 
 	async function sendPresence(): Promise<void> {
 		const ctx = liveCtx();
-		if (!ctx || !serverOk) return;
+		if (presenceInFlight || !ctx || !serverOk) return;
+		presenceInFlight = true;
 		try {
 			await post(config, "/api/presence", {
 				sessionId: ctx.sessionManager.getSessionId(),
@@ -758,6 +769,8 @@ async function handleCollaborationMessage(command: any): Promise<void> {
 		} catch {
 			serverOk = false;
 			setUiStatus("Hub ✗");
+		} finally {
+			presenceInFlight = false;
 		}
 	}
 
@@ -784,7 +797,7 @@ async function handleCollaborationMessage(command: any): Promise<void> {
 		if (monitorTimer) clearInterval(monitorTimer);
 		presenceTimer = setInterval(() => void sendPresence(), 10_000);
 		pollTimer = setInterval(() => void pollCommands(), config.pollIntervalMs);
-		monitorTimer = setInterval(() => void monitorServer(), 5_000);
+		monitorTimer = setInterval(() => void monitorServer(), 15_000);
 		void monitorServer();
 		void sendPresence();
 		void pollCommands();
@@ -792,7 +805,8 @@ async function handleCollaborationMessage(command: any): Promise<void> {
 
 	async function pollCommands(): Promise<void> {
 		const ctx = liveCtx();
-		if (!ctx || !serverOk || !sessionId) return;
+		if (pollInFlight || !ctx || !serverOk || !sessionId) return;
+		pollInFlight = true;
 		try {
 			const data = await getJson(config, `/api/poll?sessionId=${encodeURIComponent(sessionId)}`);
 			const commands = Array.isArray(data?.commands) ? data.commands : [];
@@ -880,6 +894,8 @@ async function handleCollaborationMessage(command: any): Promise<void> {
 		} catch {
 			serverOk = false;
 			setUiStatus("Hub ✗");
+		} finally {
+			pollInFlight = false;
 		}
 	}
 
@@ -1037,13 +1053,13 @@ async function handleCollaborationMessage(command: any): Promise<void> {
 					await disconnectSession();
 					try {
 						process.kill(pid);
-						ctx.ui.notify(`Pi Hub server killed (PID ${pid}). All sessions disconnected.`, "info");
+						ctx.ui.notify(`Pi Hub server killed (PID ${pid}). Auto-restart disabled until /hub start.`, "info");
 					} catch (error) {
 						ctx.ui.notify(`Failed to kill server (PID ${pid}): ${error instanceof Error ? error.message : String(error)}`, "error");
 					}
 				} else {
 					await disconnectSession();
-					ctx.ui.notify("Pi Hub server is not running.", "warning");
+					ctx.ui.notify("Pi Hub server is not running. Auto-restart disabled until /hub start.", "warning");
 				}
 				return;
 			}
