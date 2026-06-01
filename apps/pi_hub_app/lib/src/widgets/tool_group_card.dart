@@ -11,7 +11,7 @@ class ToolGroupCard extends StatefulWidget {
 }
 
 class _ToolGroupCardState extends State<ToolGroupCard> {
-  bool _expanded = true;
+  bool _expanded = false;
 
   @override
   Widget build(BuildContext context) {
@@ -20,7 +20,7 @@ class _ToolGroupCardState extends State<ToolGroupCard> {
     final title = widget.event.metadata['title'] ?? widget.event.kind;
     final collapsedLabel =
         widget.event.metadata['collapsedLabel'] ?? '${items.length} operations';
-    final shown = _expanded ? items : items.take(3).toList();
+    final shown = _expanded ? items : const <Map<String, String>>[];
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -37,53 +37,60 @@ class _ToolGroupCardState extends State<ToolGroupCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          GestureDetector(
+          InkWell(
+            borderRadius: BorderRadius.circular(10),
             onTap: () => setState(() => _expanded = !_expanded),
-            child: Row(
-              children: [
-                Container(
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: isRunning
-                        ? HubTheme.cyan.withValues(alpha: 0.1)
-                        : HubTheme.green.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: isRunning
-                      ? const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: HubTheme.cyan,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                children: [
+                  Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: isRunning
+                          ? HubTheme.cyan.withValues(alpha: 0.1)
+                          : HubTheme.green.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: isRunning
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: HubTheme.cyan,
+                            ),
+                          )
+                        : const Icon(
+                            Icons.check_circle_outline,
+                            size: 14,
+                            color: HubTheme.green,
                           ),
-                        )
-                      : const Icon(
-                          Icons.check_circle_outline,
-                          size: 14,
-                          color: HubTheme.green,
-                        ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: const TextStyle(
-                          color: HubTheme.text,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      Text(collapsedLabel, style: HubTheme.monoSmall),
-                    ],
                   ),
-                ),
-                Text(_expanded ? 'hide' : 'expand', style: HubTheme.monoSmall),
-              ],
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: const TextStyle(
+                            color: HubTheme.text,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Text(collapsedLabel, style: HubTheme.monoSmall),
+                      ],
+                    ),
+                  ),
+                  Text(
+                    _expanded ? 'hide' : 'expand',
+                    style: HubTheme.monoSmall,
+                  ),
+                ],
+              ),
             ),
           ),
           if (shown.isNotEmpty) ...[
