@@ -222,21 +222,45 @@ class EventRenderer extends StatelessWidget {
   }
 
   List<Map<String, String>> _parseToolCalls(String text) {
+    final structured = event.metadata['toolCalls'];
+    if (structured is List) {
+      return [
+        for (final item in structured)
+          if (item is Map)
+            {
+              'id': item['id']?.toString() ?? '',
+              'tool': item['name']?.toString() ?? 'tool',
+              'label': _toolLabel(item['name']?.toString(), item['arguments']),
+              'meta': 'call',
+            },
+      ];
+    }
     final lines = text.split('\n');
     final toolCalls = <Map<String, String>>[];
-    final pattern = RegExp(r'^\[tool_call\s+([^\]]+)\]\s*(.*)$');
+    final pattern = RegExp(
+      r'^\[tool_call\s+([^\]\s]+)(?:\s+([^\]]+))?\]\s*(.*)$',
+    );
     for (final line in lines) {
       final match = pattern.firstMatch(line.trim());
       if (match == null) continue;
-      final tool = match.group(1) ?? 'tool';
-      final args = match.group(2) ?? '';
+      final id = match.group(1) ?? '';
+      final tool = match.group(2) ?? id;
+      final args = match.group(3) ?? '';
       toolCalls.add({
+        'id': id,
         'tool': tool,
         'label': args.isEmpty ? tool : args,
         'meta': 'call',
       });
     }
     return toolCalls;
+  }
+
+  String _toolLabel(String? name, Object? arguments) {
+    final toolName = name == null || name.isEmpty ? 'tool' : name;
+    if (arguments == null) return toolName;
+    final args = arguments.toString();
+    return args.isEmpty ? toolName : '$toolName $args';
   }
 
   String _bashTitle(HubItem event) {

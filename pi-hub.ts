@@ -245,14 +245,45 @@ function contentToText(content: unknown): string {
 		if (!part || typeof part !== "object") return String(part ?? "");
 		const item = part as Record<string, unknown>;
 		if (item.type === "text" && typeof item.text === "string") return item.text;
-		if (item.type === "thinking" && typeof item.thinking === "string") return `[thinking]\n${item.thinking}`;
-		if (item.type === "toolCall") return `[tool_call ${String(item.name || "tool")}] ${safeJson(item.arguments || {})}`;
+		if (item.type === "thinking" && typeof item.thinking === "string") return `[thinking]
+${item.thinking}`;
+		if (item.type === "toolCall") return `[tool_call ${String(item.id || item.name || "tool")} ${String(item.name || "tool")}] ${safeJson(item.arguments || {})}`;
 		if (item.type === "toolResult") return contentToText(item.content ?? item.result ?? item.text);
 		if (item.type === "image") return "[image]";
 		if (typeof item.text === "string") return item.text;
 		if (typeof item.content === "string" || Array.isArray(item.content)) return contentToText(item.content);
 		return `[${String(item.type || "content")}] ${safeJson(item)}`;
-	}).filter(Boolean).join("\n");
+	}).filter(Boolean).join("
+");
+}
+
+function contentPartSummaries(content: unknown): Record<string, unknown>[] {
+	if (!Array.isArray(content)) return [];
+	return content.map((part) => {
+		if (!part || typeof part !== "object") return { type: typeof part, text: String(part ?? "") };
+		const item = part as Record<string, unknown>;
+		return {
+			type: String(item.type || "content"),
+			id: typeof item.id === "string" ? item.id : undefined,
+			name: typeof item.name === "string" ? item.name : undefined,
+			text: typeof item.text === "string" ? item.text : undefined,
+			thinking: typeof item.thinking === "string" ? item.thinking : undefined,
+			arguments: item.arguments,
+			content: item.content,
+		};
+	});
+}
+
+function toolCallSummaries(content: unknown): Record<string, unknown>[] {
+	return contentPartSummaries(content).filter((part) => part.type === "toolCall").map((part) => ({
+		id: part.id,
+		name: part.name || "tool",
+		arguments: part.arguments,
+	}));
+}
+
+function imagePartCount(content: unknown): number {
+	return contentPartSummaries(content).filter((part) => part.type === "image").length;
 }
 
 function messageToItem(entryOrMessage: any, fallbackId?: string): HubItem | null {
@@ -263,7 +294,7 @@ function messageToItem(entryOrMessage: any, fallbackId?: string): HubItem | null
 	const role = String(message.role || entryOrMessage?.type || "message");
 
 	if (role === "user") {
-		return { id, kind: "user", role, timestamp, text: contentToText(message.content), metadata: { rawContent: message.content } };
+		return { id, kind: "user", role, timestamp, text: contentToText(message.content), metadata: { rawContent: message.content, contentParts: contentPartSummaries(message.content), imageCount: imagePartCount(message.content) } };
 	}
 	if (role === "assistant") {
 		return {
@@ -279,6 +310,9 @@ function messageToItem(entryOrMessage: any, fallbackId?: string): HubItem | null
 				usage: message.usage,
 				errorMessage: message.errorMessage,
 				rawContent: message.content,
+				contentParts: contentPartSummaries(message.content),
+				toolCalls: toolCallSummaries(message.content),
+				imageCount: imagePartCount(message.content),
 			},
 		};
 	}
@@ -294,6 +328,8 @@ function messageToItem(entryOrMessage: any, fallbackId?: string): HubItem | null
 				toolName: message.toolName,
 				isError: message.isError,
 				details: message.details,
+				rawContent: message.content,
+				contentParts: contentPartSummaries(message.content),
 			},
 		};
 	}

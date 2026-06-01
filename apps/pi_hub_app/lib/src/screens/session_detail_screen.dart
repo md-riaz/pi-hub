@@ -201,18 +201,16 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   }
 
   bool _isToolCall(HubItem item) {
-    return item.kind == 'assistant' &&
-        RegExp(r'^\[tool_call\s+[^\]]+\]', multiLine: true).hasMatch(item.text);
+    return item.kind == 'assistant' && _toolCallsFor(item).isNotEmpty;
   }
 
   bool _isToolResult(HubItem? item) => item?.kind == 'tool';
 
   int? _matchingToolResultIndex(List<HubItem> items, int callIndex) {
     final call = items[callIndex];
-    final callIds = RegExp(r'\[tool_call\s+([^\]\s]+)')
-        .allMatches(call.text)
-        .map((match) => match.group(1))
-        .whereType<String>()
+    final callIds = _toolCallsFor(call)
+        .map((call) => call['id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
         .toSet();
     int? fallback;
     for (var i = callIndex + 1; i < items.length; i += 1) {
@@ -228,6 +226,28 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       fallback ??= i;
     }
     return fallback;
+  }
+
+  List<Map<String, dynamic>> _toolCallsFor(HubItem item) {
+    final raw = item.metadata['toolCalls'];
+    if (raw is List) {
+      return [
+        for (final call in raw)
+          if (call is Map) Map<String, dynamic>.from(call),
+      ];
+    }
+    return RegExp(
+          r'^\[tool_call\s+([^\]\s]+)(?:\s+([^\]]+))?\]',
+          multiLine: true,
+        )
+        .allMatches(item.text)
+        .map(
+          (match) => {
+            'id': match.group(1) ?? '',
+            'name': match.group(2) ?? match.group(1) ?? 'tool',
+          },
+        )
+        .toList();
   }
 
   bool _isAtBottom = true;
