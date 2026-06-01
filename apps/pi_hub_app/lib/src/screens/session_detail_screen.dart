@@ -165,6 +165,18 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         .trim();
   }
 
+  List<HubItem> get _queuedUserMessages {
+    return _items.where((item) {
+      final status = item.metadata['commandStatus']?.toString();
+      final localPending = item.metadata['localPending'] == true;
+      final queuedRole =
+          item.role == 'queued_user_message' || item.role == 'slash_command';
+      return item.kind == 'user' &&
+          (localPending || status != null || queuedRole) &&
+          item.text.trim().isNotEmpty;
+    }).toList()..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+  }
+
   String _commandStatusLabel(HubCommand command) {
     switch (command.status) {
       case 'queued':
@@ -555,6 +567,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final items = _visibleItems;
+    final queuedMessages = _queuedUserMessages;
     final models = [...widget.availableModels];
     models.sort((a, b) {
       String sortLabel(HubModel model) {
@@ -696,6 +709,12 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                           },
                         ),
                 ),
+                if (queuedMessages.isNotEmpty)
+                  _QueuedNextHint(
+                    next: queuedMessages.first,
+                    count: queuedMessages.length,
+                    onTap: _showQueuedMessages,
+                  ),
                 // Composer
                 Composer(
                   onSend: (text) {
@@ -758,6 +777,71 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                   ),
                 ),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _QueuedNextHint extends StatelessWidget {
+  const _QueuedNextHint({
+    required this.next,
+    required this.count,
+    required this.onTap,
+  });
+
+  final HubItem next;
+  final int count;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final status = next.metadata['commandStatus']?.toString() ?? 'queued';
+    final label = count > 1 ? 'Queued next (+${count - 1})' : 'Queued next';
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: HubTheme.yellow.withValues(alpha: 0.10),
+          border: Border.all(color: HubTheme.yellow.withValues(alpha: 0.30)),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.schedule_send_outlined,
+              size: 16,
+              color: HubTheme.yellow,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '$label · $status',
+                    style: const TextStyle(
+                      color: HubTheme.yellow,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    next.text.replaceAll(RegExp(r'\s+'), ' ').trim(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: HubTheme.monoSmall.copyWith(color: HubTheme.text2),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(Icons.edit, size: 14, color: HubTheme.text3),
           ],
         ),
       ),
