@@ -184,11 +184,16 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       if (consumed.contains(i)) continue;
       final current = raw[i];
       if (_isToolCall(current)) {
-        final resultIndex = _matchingToolResultIndex(raw, i);
-        if (resultIndex != null) {
-          consumed.add(resultIndex);
+        final resultIndexes = _matchingToolResultIndexes(raw, i);
+        if (resultIndexes.isNotEmpty) {
+          consumed.addAll(resultIndexes);
           visible.add(
-            _TimelineItem(current, pairedToolResult: raw[resultIndex]),
+            _TimelineItem(
+              current,
+              pairedToolResults: [
+                for (final index in resultIndexes) raw[index],
+              ],
+            ),
           );
         } else {
           visible.add(_TimelineItem(current));
@@ -206,13 +211,16 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 
   bool _isToolResult(HubItem? item) => item?.kind == 'tool';
 
-  int? _matchingToolResultIndex(List<HubItem> items, int callIndex) {
+  List<int> _matchingToolResultIndexes(List<HubItem> items, int callIndex) {
     final call = items[callIndex];
-    final callIds = _toolCallsFor(call)
+    final toolCalls = _toolCallsFor(call);
+    final callIds = toolCalls
         .map((call) => call['id']?.toString() ?? '')
         .where((id) => id.isNotEmpty)
         .toSet();
-    int? fallback;
+    final expectedCount = toolCalls.length;
+    final exact = <int>[];
+    final fallback = <int>[];
     for (var i = callIndex + 1; i < items.length; i += 1) {
       final candidate = items[i];
       if (_isToolCall(candidate)) break;
@@ -221,11 +229,14 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       if (toolCallId != null &&
           toolCallId.isNotEmpty &&
           callIds.contains(toolCallId)) {
-        return i;
+        exact.add(i);
+      } else {
+        fallback.add(i);
       }
-      fallback ??= i;
+      if (exact.length >= expectedCount) break;
     }
-    return fallback;
+    if (exact.isNotEmpty) return exact;
+    return fallback.take(expectedCount == 0 ? 1 : expectedCount).toList();
   }
 
   List<Map<String, dynamic>> _toolCallsFor(HubItem item) {
@@ -659,6 +670,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                               event: item.event,
                               isStreaming: isStreaming,
                               pairedToolResult: item.pairedToolResult,
+                              pairedToolResults: item.pairedToolResults,
                               onViewDiff: (edit) => DiffDrawer.show(
                                 context,
                                 file: edit.file,
@@ -822,10 +834,15 @@ class _ConnectionStatusBar extends StatelessWidget {
 }
 
 class _TimelineItem {
-  const _TimelineItem(this.event, {this.pairedToolResult});
+  const _TimelineItem(
+    this.event, {
+    this.pairedToolResult,
+    this.pairedToolResults = const [],
+  });
 
   final HubItem event;
   final HubItem? pairedToolResult;
+  final List<HubItem> pairedToolResults;
 }
 
 class _InfoRow extends StatelessWidget {

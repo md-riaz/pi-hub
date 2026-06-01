@@ -13,6 +13,7 @@ class EventRenderer extends StatelessWidget {
   final ValueChanged<EditEvent>? onViewDiff;
   final ValueChanged<String>? onQuickReply;
   final HubItem? pairedToolResult;
+  final List<HubItem> pairedToolResults;
   final ValueChanged<HubItem>? onPendingCommandAction;
 
   const EventRenderer({
@@ -22,6 +23,7 @@ class EventRenderer extends StatelessWidget {
     this.onViewDiff,
     this.onQuickReply,
     this.pairedToolResult,
+    this.pairedToolResults = const [],
     this.onPendingCommandAction,
   });
 
@@ -98,15 +100,22 @@ class EventRenderer extends StatelessWidget {
   Widget? _toolCallCard(HubItem event) {
     final toolCalls = _parseToolCalls(event.text);
     if (toolCalls.isNotEmpty) {
-      final paired = pairedToolResult;
-      final isError = paired?.metadata['isError'] == true;
-      final status = paired == null ? 'running' : (isError ? 'error' : 'done');
+      final paired = _pairedResultsById();
+      final hasAnyResult = paired.isNotEmpty;
+      final hasAnyError = paired.values.any(
+        (item) => item.metadata['isError'] == true,
+      );
+      final status = !hasAnyResult
+          ? 'running'
+          : (hasAnyError ? 'error' : 'done');
       final items = toolCalls.map((call) {
-        final result = paired?.text.trim() ?? '';
+        final result = paired[call['id']] ?? paired[call['tool']];
+        final resultText = result?.text.trim() ?? '';
+        final isError = result?.metadata['isError'] == true;
         return {
           ...call,
-          'meta': paired == null ? 'running' : (isError ? 'error' : 'done'),
-          if (result.isNotEmpty) 'result': result,
+          'meta': result == null ? 'running' : (isError ? 'error' : 'done'),
+          if (resultText.isNotEmpty) 'result': resultText,
         };
       }).toList();
       return ToolGroupCard(
@@ -115,17 +124,20 @@ class EventRenderer extends StatelessWidget {
           kind: 'tool',
           role: 'tool_call',
           timestamp: event.timestamp,
-          text: paired == null || paired.text.isEmpty
-              ? event.text
-              : '${event.text}\n\n${paired.text}',
+          text: hasAnyResult
+              ? [
+                  event.text,
+                  ...paired.values.map((item) => item.text),
+                ].where((text) => text.trim().isNotEmpty).join('\n\n')
+              : event.text,
           metadata: {
             'title': toolCalls.length == 1
                 ? 'Tool: ${toolCalls.first['tool']}'
                 : 'Tools',
             'status': status,
-            'collapsedLabel': paired == null
+            'collapsedLabel': !hasAnyResult
                 ? '${toolCalls.length} running'
-                : '${toolCalls.length} completed',
+                : '${paired.length}/${toolCalls.length} completed',
             'items': items,
           },
         ),
@@ -138,6 +150,21 @@ class EventRenderer extends StatelessWidget {
       return _terminalCard(event, title: 'Image attachment', status: 'done');
     }
     return null;
+  }
+
+  Map<String, HubItem> _pairedResultsById() {
+    final results = [
+      ...pairedToolResults,
+      if (pairedToolResult != null) pairedToolResult!,
+    ];
+    final out = <String, HubItem>{};
+    for (final item in results) {
+      final id = item.metadata['toolCallId']?.toString();
+      if (id != null && id.isNotEmpty) out[id] = item;
+      final name = item.metadata['toolName']?.toString();
+      if (name != null && name.isNotEmpty) out.putIfAbsent(name, () => item);
+    }
+    return out;
   }
 
   Widget _toolEventCard(HubItem event) {

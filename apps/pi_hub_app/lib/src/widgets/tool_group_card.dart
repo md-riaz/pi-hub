@@ -11,7 +11,7 @@ class ToolGroupCard extends StatefulWidget {
 }
 
 class _ToolGroupCardState extends State<ToolGroupCard> {
-  bool _expanded = false;
+  bool _expanded = true;
 
   @override
   Widget build(BuildContext context) {
@@ -86,55 +86,14 @@ class _ToolGroupCardState extends State<ToolGroupCard> {
               ],
             ),
           ),
-          if (_expanded) ...[
+          if (shown.isNotEmpty) ...[
             const SizedBox(height: 8),
-            ...shown.map((item) {
-              final result = item['result'] ?? '';
-              return Container(
-                margin: const EdgeInsets.only(bottom: 4),
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                decoration: BoxDecoration(
-                  color: HubTheme.panel,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          _toolIcon(item['tool'] ?? ''),
-                          size: 13,
-                          color: HubTheme.blue,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            item['label'] ?? '',
-                            style: HubTheme.mono.copyWith(fontSize: 11),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        Text(item['meta'] ?? '', style: HubTheme.monoSmall),
-                      ],
-                    ),
-                    if (result.isNotEmpty) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        result.split('\n').take(12).join('\n'),
-                        style: HubTheme.mono.copyWith(
-                          color: HubTheme.text2,
-                          fontSize: 11,
-                          height: 1.35,
-                        ),
-                        maxLines: 12,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ],
-                ),
-              );
-            }),
+            ...shown.map(
+              (item) => _ToolPreviewRow(
+                item: item,
+                icon: _toolIcon(item['tool'] ?? ''),
+              ),
+            ),
           ],
         ],
       ),
@@ -154,17 +113,84 @@ class _ToolGroupCardState extends State<ToolGroupCard> {
   IconData _toolIcon(String tool) {
     switch (tool) {
       case 'read_file':
+      case 'read':
+      case 'ctx_read':
         return Icons.description_outlined;
       case 'bash':
+      case 'ctx_shell':
+      case 'ctx_execute':
         return Icons.terminal;
       case 'grep':
+      case 'ctx_grep':
         return Icons.search;
       case 'write_file':
+      case 'write':
+      case 'edit':
         return Icons.code;
       case 'git_diff':
         return Icons.account_tree;
       default:
         return Icons.keyboard_command_key;
     }
+  }
+}
+
+class _ToolPreviewRow extends StatelessWidget {
+  final Map<String, String> item;
+  final IconData icon;
+  const _ToolPreviewRow({required this.item, required this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    final meta = item['meta'] ?? '';
+    final isRunning = meta == 'running';
+    final isError = meta == 'error';
+    final color = isError
+        ? HubTheme.red
+        : (isRunning ? HubTheme.cyan : HubTheme.green);
+    final result = item['result'] ?? '';
+    final resultPreview = result.split('\n').take(isRunning ? 4 : 8).join('\n');
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: HubTheme.panel,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withOpacity(0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(isRunning ? Icons.sync : icon, size: 13, color: color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  item['label'] ?? item['tool'] ?? '',
+                  style: HubTheme.mono.copyWith(fontSize: 11),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Text(meta, style: HubTheme.monoSmall.copyWith(color: color)),
+            ],
+          ),
+          if (resultPreview.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              resultPreview,
+              style: HubTheme.mono.copyWith(
+                color: HubTheme.text2,
+                fontSize: 10.5,
+                height: 1.3,
+              ),
+              maxLines: isRunning ? 4 : 8,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }
