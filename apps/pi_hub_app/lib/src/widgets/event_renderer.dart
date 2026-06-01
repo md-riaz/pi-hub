@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import '../hub_models.dart';
 import 'user_bubble.dart';
@@ -345,9 +347,42 @@ class EventRenderer extends StatelessWidget {
 
   String _toolLabel(String? name, Object? arguments) {
     final toolName = name == null || name.isEmpty ? 'tool' : name;
-    if (arguments == null) return toolName;
-    final args = arguments.toString();
-    return args.isEmpty ? toolName : '$toolName $args';
+    final summary = _toolArgumentsSummary(arguments);
+    return summary.isEmpty ? toolName : '$toolName $summary';
+  }
+
+  String _toolArgumentsSummary(Object? arguments) {
+    if (arguments == null) return '';
+    Object? value = arguments;
+    if (value is String) {
+      final trimmed = value.trim();
+      if (trimmed.isEmpty) return '';
+      try {
+        value = jsonDecode(trimmed);
+      } catch (_) {
+        return _singleLine(trimmed);
+      }
+    }
+    if (value is Map) {
+      for (final key in ['path', 'file', 'filePath', 'command', 'pattern']) {
+        final item = value[key];
+        if (item != null && item.toString().trim().isNotEmpty) {
+          return _singleLine(item.toString());
+        }
+      }
+      for (final entry in value.entries) {
+        final item = entry.value;
+        if (item != null && item.toString().trim().isNotEmpty) {
+          return '${entry.key}: ${_singleLine(item.toString())}';
+        }
+      }
+      return '';
+    }
+    return _singleLine(value.toString());
+  }
+
+  String _singleLine(String text) {
+    return text.replaceAll(RegExp(r'\s+'), ' ').trim();
   }
 
   String _formatTime(int timestamp) {
