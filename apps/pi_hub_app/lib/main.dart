@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -54,6 +55,7 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
   bool _resumeRefreshInFlight = false;
   int _streamRetry = 0;
   Timer? _reconnectTimer;
+  final Random _random = Random();
   List<Map<String, String>> _recentConnections = [];
   String? _lastUsedModel;
 
@@ -173,7 +175,7 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
       },
       onError: (Object error) {
         if (!mounted || _manualDisconnect) return;
-        setState(() => _connectionState = 'Reconnecting: $error');
+        setState(() => _connectionState = 'Reconnecting...');
         _scheduleReconnect();
       },
       onDone: () {
@@ -188,25 +190,29 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
   void _scheduleReconnect() {
     if (_manualDisconnect || _connecting) return;
     _reconnectTimer?.cancel();
-    final delaySeconds = _streamRetry < 5 ? (1 << _streamRetry) : 30;
+    final baseDelaySeconds = _streamRetry < 5 ? (1 << _streamRetry) : 30;
+    final jitterMs = _random.nextInt(750);
     _streamRetry += 1;
-    _reconnectTimer = Timer(Duration(seconds: delaySeconds), () async {
-      if (!mounted || _manualDisconnect) return;
-      try {
-        final snapshot = await _client.fetchSnapshot();
+    _reconnectTimer = Timer(
+      Duration(seconds: baseDelaySeconds, milliseconds: jitterMs),
+      () async {
         if (!mounted || _manualDisconnect) return;
-        setState(() {
-          _snapshot = snapshot;
-          _connectionState = 'Reconnected';
-          _connectionError = null;
-        });
-        _startStream();
-      } catch (error) {
-        if (!mounted || _manualDisconnect) return;
-        setState(() => _connectionState = 'Reconnect failed: $error');
-        _scheduleReconnect();
-      }
-    });
+        try {
+          final snapshot = await _client.fetchSnapshot();
+          if (!mounted || _manualDisconnect) return;
+          setState(() {
+            _snapshot = snapshot;
+            _connectionState = 'Reconnected';
+            _connectionError = null;
+          });
+          _startStream();
+        } catch (error) {
+          if (!mounted || _manualDisconnect) return;
+          setState(() => _connectionState = 'Reconnect failed');
+          _scheduleReconnect();
+        }
+      },
+    );
   }
 
   Future<void> _connect() async {
@@ -292,7 +298,7 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
       _startStream();
     } catch (error) {
       if (!mounted || _manualDisconnect) return;
-      setState(() => _connectionState = 'Reconnect failed: $error');
+      setState(() => _connectionState = 'Reconnect failed');
       _scheduleReconnect();
     } finally {
       _resumeRefreshInFlight = false;

@@ -478,7 +478,7 @@ function currentTodos(ctx: ExtensionContext): unknown[] {
 	return [];
 }
 
-function currentSessionInfo(ctx: ExtensionContext, config: PiHubConfig, status: string, slashCommands: Array<{ name: string; description?: string }> = []) {
+function currentSessionInfo(ctx: ExtensionContext, config: PiHubConfig, status: string, slashCommands: ReturnType<typeof slashCommandSummaries> = [], availableModels: ReturnType<typeof availableModelSummaries> = []) {
 	return {
 		id: ctx.sessionManager.getSessionId(),
 		name: ctx.sessionManager.getSessionName(),
@@ -488,7 +488,7 @@ function currentSessionInfo(ctx: ExtensionContext, config: PiHubConfig, status: 
 		startedAt: Date.now(),
 		status,
 		contextUsage: ctx.getContextUsage?.(),
-		availableModels: availableModelSummaries(ctx),
+		availableModels,
 		slashCommands,
 		todos: currentTodos(ctx),
 		history: sessionHistory(ctx, config.historyLimit),
@@ -539,6 +539,18 @@ export default function piHubExtension(pi: ExtensionAPI) {
 	const toolNames = new Map<string, string>();
 	const pendingMobileInputs: PendingMobileInput[] = [];
 	let serverOk = false;
+	let cachedSlashCommands: ReturnType<typeof slashCommandSummaries> | null = null;
+	let cachedAvailableModels: ReturnType<typeof availableModelSummaries> | null = null;
+
+	function sessionSlashCommands(): ReturnType<typeof slashCommandSummaries> {
+		cachedSlashCommands ??= slashCommandSummaries(pi);
+		return cachedSlashCommands;
+	}
+
+	function sessionAvailableModels(ctx: ExtensionContext): ReturnType<typeof availableModelSummaries> {
+		cachedAvailableModels ??= availableModelSummaries(ctx);
+		return cachedAvailableModels;
+	}
 
 	function rememberMobileInput(command: any): PendingMobileInput {
 		const pending = {
@@ -644,7 +656,7 @@ export default function piHubExtension(pi: ExtensionAPI) {
 	const args = restParts.join(" ");
 	const ctx = liveCtx();
 	if (!ctx) throw new Error("session not available");
-	const slash = slashCommandSummaries(pi).find((candidate) => candidate.name === name || candidate.name === `/${name}`);
+	const slash = sessionSlashCommands().find((candidate) => candidate.name === name || candidate.name === `/${name}`);
 	if (!slash) throw new Error(`Slash command /${name} is not available`);
 
 	if (name === "hub") {
@@ -761,8 +773,8 @@ async function handleCollaborationMessage(command: any): Promise<void> {
 				model: ctx.model?.id || "unknown",
 				status: currentStatus(),
 				contextUsage: ctx.getContextUsage?.(),
-				availableModels: availableModelSummaries(ctx),
-				slashCommands: slashCommandSummaries(pi),
+				availableModels: sessionAvailableModels(ctx),
+				slashCommands: sessionSlashCommands(),
 				todos: currentTodos(ctx),
 				...clientMetadata(),
 			});
@@ -779,7 +791,7 @@ async function handleCollaborationMessage(command: any): Promise<void> {
 		try {
 			await ensureServer(config);
 			serverOk = true;
-			await post(config, "/api/register", { session: { ...currentSessionInfo(ctx, config, currentStatus(), slashCommandSummaries(pi)), startedAt }, ...clientMetadata() });
+			await post(config, "/api/register", { session: { ...currentSessionInfo(ctx, config, currentStatus(), sessionSlashCommands(), sessionAvailableModels(ctx)), startedAt }, ...clientMetadata() });
 			setUiStatus("Hub ✓");
 			void pollCommands();
 		} catch (error) {
@@ -869,18 +881,6 @@ async function handleCollaborationMessage(command: any): Promise<void> {
 						continue;
 					}
 
-					if (command?.type === "diff_review_response") {
-						const action = String(command.action || command.status || "comment");
-						const diffReviewId = String(command.diffReviewId || command.id || "unknown");
-						if (ctx.hasUI) {
-							const comment = typeof command.comment === "string" && command.comment.trim() ? `\n${command.comment.trim()}` : "";
-							ctx.ui.notify(`Diff review ${diffReviewId}: ${action}${comment}`, action === "changes_requested" || action === "request_changes" ? "warning" : "info");
-						}
-						await sendEvent({ type: "diff_review_response", diffReviewId, action, status: command.status, comment: command.comment });
-						await sendCommandResult(command, true);
-						continue;
-					}
-
 					if (command?.type === "collaboration_message") {
 						await handleCollaborationMessage(command);
 						await sendCommandResult(command, true);
@@ -906,6 +906,8 @@ async function handleCollaborationMessage(command: any): Promise<void> {
 		startedAt = Date.now();
 		status = "idle";
 		toolNames.clear();
+		cachedSlashCommands = null;
+		cachedAvailableModels = null;
 		if (connectTimer) clearTimeout(connectTimer);
 		connectTimer = setTimeout(() => void register(ctx), 0);
 		startBackgroundLoops();

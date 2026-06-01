@@ -463,24 +463,6 @@ class _SessionCard extends StatelessWidget {
                 ],
               ),
             ),
-            if (session.inboxItems.any((i) => i.unread)) ...[
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: HubTheme.blue,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  '${session.inboxItems.where((i) => i.unread).length}',
-                  style: const TextStyle(
-                    color: Color(0xFF06111F),
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
           ],
         ),
       ),

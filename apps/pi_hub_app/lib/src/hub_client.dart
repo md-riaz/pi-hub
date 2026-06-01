@@ -146,74 +146,69 @@ class HubClient {
 
     HubSnapshot? snapshot;
     int? lastSeq;
+    final dataLines = <String>[];
     await for (final line
         in response.transform(utf8.decoder).transform(const LineSplitter())) {
-      if (!line.startsWith('data: ')) continue;
-      final data = jsonDecode(line.substring(6)) as Map<String, dynamic>;
-      final seq = _intValue(data['seq']);
-      final missedEvents = seq != null && lastSeq != null && seq > lastSeq + 1;
-      if (missedEvents) {
-        snapshot = await fetchSnapshot();
-        yield snapshot;
-      }
-      if (seq != null) lastSeq = seq;
-      if (data['type'] == 'snapshot') {
-        snapshot = HubSnapshot.fromJson(
-          data['snapshot'] as Map<String, dynamic>,
-        ).activeOnly();
-      } else {
-        final previousSnapshot = snapshot;
-        if (data['session'] != null) {
-          final session = HubSession.fromJson(
-            data['session'] as Map<String, dynamic>,
-          );
-          if (session.isActive(
-            staleThresholdMs: snapshot?.server?.staleThresholdMs,
-          )) {
-            snapshot = (snapshot ?? HubSnapshot.empty()).upsert(session);
-          } else {
+      if (line.isEmpty) {
+        if (dataLines.isEmpty) continue;
+        final rawData = dataLines.join('\n');
+        dataLines.clear();
+        final data = jsonDecode(rawData) as Map<String, dynamic>;
+        final seq = _intValue(data['seq']);
+        final missedEvents =
+            seq != null && lastSeq != null && seq > lastSeq + 1;
+        if (missedEvents) {
+          snapshot = await fetchSnapshot();
+          yield snapshot;
+        }
+        if (seq != null) lastSeq = seq;
+        if (data['type'] == 'snapshot') {
+          snapshot = HubSnapshot.fromJson(
+            data['snapshot'] as Map<String, dynamic>,
+          ).activeOnly();
+        } else {
+          final previousSnapshot = snapshot;
+          if (data['session'] != null) {
+            final session = HubSession.fromJson(
+              data['session'] as Map<String, dynamic>,
+            );
+            if (session.isActive(
+              staleThresholdMs: snapshot?.server?.staleThresholdMs,
+            )) {
+              snapshot = (snapshot ?? HubSnapshot.empty()).upsert(session);
+            } else {
+              snapshot = (snapshot ?? HubSnapshot.empty()).removeSession(
+                session.id,
+              );
+            }
+          }
+          if (data['type'] == 'session_removed' && data['sessionId'] != null) {
+            final removedId = data['sessionId'].toString();
             snapshot = (snapshot ?? HubSnapshot.empty()).removeSession(
-              session.id,
+              removedId,
+            );
+          }
+          if (data['command'] != null) {
+            snapshot = _upsertCommandInSnapshot(
+              snapshot ?? HubSnapshot.empty(),
+              _commandFromStreamData(data),
+            );
+          }
+          if (data['event'] != null) {
+            snapshot = _upsertEventInSnapshot(
+              snapshot ?? HubSnapshot.empty(),
+              previousSnapshot,
+              _stringKeyMap(data['event'] as Map),
             );
           }
         }
-        if (data['type'] == 'session_removed' && data['sessionId'] != null) {
-          final removedId = data['sessionId'].toString();
-          snapshot = (snapshot ?? HubSnapshot.empty()).removeSession(removedId);
-        }
-        if (data['inboxItem'] != null) {
-          snapshot = _upsertInboxItemInSnapshot(
-            snapshot ?? HubSnapshot.empty(),
-            HubInboxItem.fromJson(_stringKeyMap(data['inboxItem'] as Map)),
-          );
-        }
-        if (data['command'] != null) {
-          snapshot = _upsertCommandInSnapshot(
-            snapshot ?? HubSnapshot.empty(),
-            _commandFromStreamData(data),
-          );
-        }
-        if (data['event'] != null) {
-          snapshot = _upsertEventInSnapshot(
-            snapshot ?? HubSnapshot.empty(),
-            previousSnapshot,
-            _stringKeyMap(data['event'] as Map),
-          );
-        }
-        if (data['approval'] != null) {
-          snapshot = _upsertApprovalInSnapshot(
-            snapshot ?? HubSnapshot.empty(),
-            HubApprovalRequest.fromJson(_stringKeyMap(data['approval'] as Map)),
-          );
-        }
-        if (data['diffReview'] != null) {
-          snapshot = _upsertDiffReviewInSnapshot(
-            snapshot ?? HubSnapshot.empty(),
-            HubDiffReview.fromJson(_stringKeyMap(data['diffReview'] as Map)),
-          );
-        }
+        if (snapshot != null) yield snapshot;
+        continue;
       }
-      if (snapshot != null) yield snapshot;
+      if (line.startsWith(':')) continue;
+      if (line.startsWith('data:')) {
+        dataLines.add(line.substring(5).trimLeft());
+      }
     }
   }
 
@@ -243,7 +238,7 @@ class HubClient {
     final client = _newHttpClient();
     try {
       final request = await client.postUrl(
-        Uri.parse('$baseUrl/api/v2/agents/create'),
+        Uri.parse('$baseUrl/api/agents/create'),
       );
       request.headers.contentType = ContentType.json;
       request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
@@ -262,15 +257,14 @@ class HubClient {
   }
 
   Future<void> updateCommandText(String commandId, String text) async {
-    await _postJson(
-      '/api/v2/commands/${Uri.encodeComponent(commandId)}/update',
-      {'text': text},
-    );
+    await _postJson('/api/commands/${Uri.encodeComponent(commandId)}/update', {
+      'text': text,
+    });
   }
 
   Future<void> cancelCommand(String commandId) async {
     await _postJson(
-      '/api/v2/commands/${Uri.encodeComponent(commandId)}/cancel',
+      '/api/commands/${Uri.encodeComponent(commandId)}/cancel',
       {},
     );
   }
@@ -296,7 +290,7 @@ class HubClient {
     required List<String> sessionIds,
     required String text,
   }) async {
-    final data = await _postJson('/api/v2/collaboration/messages', {
+    final data = await _postJson('/api/collaboration/messages', {
       'sessionIds': sessionIds,
       'text': text,
     });
@@ -338,7 +332,7 @@ class HubClient {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
     try {
       final uri = Uri.parse(
-        '$baseUrl/api/v2/browse?path=${Uri.encodeComponent(dirPath)}&token=$token',
+        '$baseUrl/api/browse?path=${Uri.encodeComponent(dirPath)}&token=$token',
       );
       final req = await client.getUrl(uri);
       final res = await req.close().timeout(const Duration(seconds: 8));
@@ -362,7 +356,7 @@ class HubClient {
   }) async {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
     try {
-      final uri = Uri.parse('$baseUrl/api/v2/send-attachment?token=$token');
+      final uri = Uri.parse('$baseUrl/api/send-attachment?token=$token');
       final req = await client.postUrl(uri);
       req.headers.contentType = ContentType.json;
       req.write(
@@ -385,8 +379,18 @@ class BrowseResult {
   final String path;
   final String parent;
   final List<BrowseEntry> items;
+  final bool truncated;
+  final int total;
+  final int limit;
 
-  BrowseResult({required this.path, required this.parent, required this.items});
+  BrowseResult({
+    required this.path,
+    required this.parent,
+    required this.items,
+    required this.truncated,
+    required this.total,
+    required this.limit,
+  });
 
   factory BrowseResult.fromJson(Map<String, dynamic> json) {
     return BrowseResult(
@@ -395,6 +399,9 @@ class BrowseResult {
       items: (json['items'] as List? ?? [])
           .map((e) => BrowseEntry.fromJson(e))
           .toList(),
+      truncated: json['truncated'] == true,
+      total: _intValue(json['total']) ?? 0,
+      limit: _intValue(json['limit']) ?? 0,
     );
   }
 }
@@ -501,13 +508,7 @@ HubSnapshot _upsertEventInSnapshot(
   return HubSnapshot(
     server: snapshot.server,
     sessions: nextSessions,
-    inboxItems: snapshot.inboxItems,
     commands: snapshot.commands,
-    approvals: snapshot.approvals,
-    diffReviews: snapshot.diffReviews,
-    pushDevices: snapshot.pushDevices,
-    auditEvents: snapshot.auditEvents,
-    auditSummary: snapshot.auditSummary,
   );
 }
 
@@ -567,70 +568,6 @@ HubSession _copySession(
     lastEvent: session.lastEvent,
     health: session.health,
     commands: session.commands,
-    inboxItems: session.inboxItems,
-  );
-}
-
-HubSnapshot _upsertInboxItemInSnapshot(
-  HubSnapshot snapshot,
-  HubInboxItem item,
-) {
-  final inboxItems = [...snapshot.inboxItems];
-  final index = inboxItems.indexWhere((current) => current.id == item.id);
-  if (index >= 0) {
-    inboxItems[index] = item;
-  } else {
-    inboxItems.add(item);
-  }
-  inboxItems.sort(_compareInboxItems);
-  final sessions = [
-    for (final session in snapshot.sessions)
-      if (item.sessionId == session.id)
-        session.withActivity(
-          inboxItems: _upsertSessionInboxItem(session.inboxItems, item),
-        )
-      else
-        session,
-  ];
-  return HubSnapshot(
-    server: snapshot.server,
-    sessions: sessions,
-    inboxItems: inboxItems,
-    commands: snapshot.commands,
-    approvals: snapshot.approvals,
-    diffReviews: snapshot.diffReviews,
-    pushDevices: snapshot.pushDevices,
-    auditEvents: snapshot.auditEvents,
-    auditSummary: snapshot.auditSummary,
-  );
-}
-
-HubSnapshot _upsertDiffReviewInSnapshot(
-  HubSnapshot snapshot,
-  HubDiffReview review,
-) {
-  final reviews = [...snapshot.diffReviews];
-  final index = reviews.indexWhere((current) => current.id == review.id);
-  if (index >= 0) {
-    reviews[index] = review;
-  } else {
-    reviews.add(review);
-  }
-  reviews.sort(
-    (a, b) => (b.updatedAt ?? b.createdAt ?? 0).compareTo(
-      a.updatedAt ?? a.createdAt ?? 0,
-    ),
-  );
-  return HubSnapshot(
-    server: snapshot.server,
-    sessions: snapshot.sessions,
-    inboxItems: snapshot.inboxItems,
-    commands: snapshot.commands,
-    approvals: snapshot.approvals,
-    diffReviews: reviews,
-    pushDevices: snapshot.pushDevices,
-    auditEvents: snapshot.auditEvents,
-    auditSummary: snapshot.auditSummary,
   );
 }
 
@@ -655,54 +592,8 @@ HubSnapshot _upsertCommandInSnapshot(HubSnapshot snapshot, HubCommand command) {
   return HubSnapshot(
     server: snapshot.server,
     sessions: sessions,
-    inboxItems: snapshot.inboxItems,
     commands: commands,
-    approvals: snapshot.approvals,
-    diffReviews: snapshot.diffReviews,
-    pushDevices: snapshot.pushDevices,
-    auditEvents: snapshot.auditEvents,
-    auditSummary: snapshot.auditSummary,
   );
-}
-
-HubSnapshot _upsertApprovalInSnapshot(
-  HubSnapshot snapshot,
-  HubApprovalRequest approval,
-) {
-  final approvals = [...snapshot.approvals];
-  final index = approvals.indexWhere((current) => current.id == approval.id);
-  if (index >= 0) {
-    approvals[index] = approval;
-  } else {
-    approvals.add(approval);
-  }
-  approvals.sort((a, b) => (b.createdAt ?? 0).compareTo(a.createdAt ?? 0));
-  return HubSnapshot(
-    server: snapshot.server,
-    sessions: snapshot.sessions,
-    inboxItems: snapshot.inboxItems,
-    commands: snapshot.commands,
-    approvals: approvals,
-    diffReviews: snapshot.diffReviews,
-    pushDevices: snapshot.pushDevices,
-    auditEvents: snapshot.auditEvents,
-    auditSummary: snapshot.auditSummary,
-  );
-}
-
-List<HubInboxItem> _upsertSessionInboxItem(
-  List<HubInboxItem> items,
-  HubInboxItem item,
-) {
-  final next = [...items];
-  final index = next.indexWhere((current) => current.id == item.id);
-  if (index >= 0) {
-    next[index] = item;
-  } else {
-    next.add(item);
-  }
-  next.sort(_compareInboxItems);
-  return next;
 }
 
 HubCommand _commandFromStreamData(Map<String, dynamic> data) {
@@ -725,12 +616,6 @@ List<HubCommand> _upsertSessionCommand(
   }
   next.sort(_compareCommands);
   return next;
-}
-
-int _compareInboxItems(HubInboxItem a, HubInboxItem b) {
-  return (b.updatedAt ?? b.createdAt ?? 0).compareTo(
-    a.updatedAt ?? a.createdAt ?? 0,
-  );
 }
 
 int _compareCommands(HubCommand a, HubCommand b) {

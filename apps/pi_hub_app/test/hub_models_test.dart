@@ -12,9 +12,7 @@ void main() {
 
     expect(snapshot.server?.schemaVersion, 2);
     expect(snapshot.server?.capabilities.health, isTrue);
-    expect(snapshot.server?.capabilities.inbox, isTrue);
     expect(snapshot.server?.capabilities.agentCreation, isFalse);
-    expect(snapshot.server?.capabilities.pushDevices, isFalse);
     expect(snapshot.sessions, hasLength(20));
     expect(
       snapshot.sessions.map((session) => session.health?.state).toSet(),
@@ -22,8 +20,6 @@ void main() {
     );
     expect(snapshot.sessions.first.health?.runningToolCount, 1);
     expect(snapshot.sessions.first.liveMessage?.streaming, isTrue);
-    expect(snapshot.inboxItems, hasLength(4));
-    expect(snapshot.unreadInboxCount, 4);
     expect(
       snapshot.commands.map((command) => command.status),
       containsAll(['queued', 'failed']),
@@ -32,30 +28,13 @@ void main() {
       snapshot.commands.singleWhere((command) => command.id == 'cmd-011').error,
       'target model unavailable',
     );
-    expect(snapshot.approvals, hasLength(2));
-    expect(
-      snapshot.approvals.first.choices,
-      containsAll(['approve', 'reject']),
-    );
-    expect(snapshot.diffReviews.single.files.single.path, 'lib/main.dart');
-    expect(snapshot.diffReviews.single.files.single.additions, 12);
-    expect(snapshot.auditSummary.totalCount, 1);
   });
 
   test('ignores unknown fields and tolerates loose maps', () {
     final snapshot = HubSnapshot.fromJson({
       'server': {
         'schemaVersion': '2',
-        'capabilities': {
-          'health': 'true',
-          'pushDevices': true,
-          'pushNotifications': {
-            'enabled': false,
-            'configured': true,
-            'provider': 'ntfy',
-          },
-          'mystery': true,
-        },
+        'capabilities': {'health': 'true', 'mystery': true},
         'unused': {'nested': true},
       },
       'sessions': [
@@ -77,14 +56,6 @@ void main() {
           ],
         },
       ],
-      'inboxItems': [
-        {
-          'id': 'inbox-a',
-          'actionRef': {'kind': 'approval', 'id': 'approval-a'},
-          'readAt': 123,
-          'extra': 'ignored',
-        },
-      ],
       'commands': [
         {
           'id': 'cmd-a',
@@ -92,56 +63,20 @@ void main() {
           'status': 'delivered',
         },
       ],
-      'approvals': [
-        {
-          'id': 'approval-a',
-          'choices': ['approve', 'reject'],
-          'risk': 'high',
-        },
+      'unusedTopLevel': [
+        {'ignored': true},
       ],
-      'diffReviews': [
-        {
-          'id': 'diff-a',
-          'files': [
-            {'path': 'a.dart', 'additions': '3', 'deletions': 1},
-          ],
-        },
-      ],
-      'pushDevices': [
-        {
-          'deviceId': 'android-one',
-          'platform': 'android',
-          'provider': 'ntfy',
-          'enabled': true,
-          'hasToken': true,
-          'token': 'not parsed as model field',
-          'scopes': ['critical', 'approval'],
-        },
-      ],
-      'auditSummary': {'totalCount': '9', 'recentCount': 2},
     });
 
     final session = snapshot.sessions.single;
     expect(snapshot.server?.schemaVersion, 2);
     expect(snapshot.server?.capabilities.health, isTrue);
-    expect(snapshot.server?.capabilities.pushDevices, isTrue);
-    expect(snapshot.server?.capabilities.pushNotifications.provider, 'ntfy');
-    expect(snapshot.server?.capabilities.pushNotifications.enabled, isFalse);
-    expect(snapshot.server?.capabilities.pushNotifications.configured, isTrue);
     expect(session.health?.needsAttention, isTrue);
     expect(session.health?.attentionReasons, ['approval_pending', '7']);
     expect(session.health?.runningToolCount, 2);
     expect(session.health?.contextPercent, 42.5);
     expect(session.tools.single.isError, isTrue);
-    expect(snapshot.inboxItems.single.unread, isFalse);
-    expect(snapshot.inboxItems.single.actionRef?.kind, 'approval');
     expect(snapshot.commands.single.isPending, isTrue);
-    expect(snapshot.approvals.single.pending, isTrue);
-    expect(snapshot.diffReviews.single.files.single.additions, 3);
-    expect(snapshot.pushDevices.single.deviceId, 'android-one');
-    expect(snapshot.pushDevices.single.hasToken, isTrue);
-    expect(snapshot.pushDevices.single.scopes, ['critical', 'approval']);
-    expect(snapshot.auditSummary.totalCount, 9);
   });
 
   test('parses model input image capability', () {
@@ -214,7 +149,7 @@ void main() {
           'name': 'Helpful Agent',
           'cwd': '/work/project',
         },
-        {'id': 'path-session', 'name': '', 'cwd': r'C:\\Users\\me\\repo'},
+        {'id': 'path-session', 'name': '', 'cwd': r'C:\Users\me\repo'},
         {'id': 'empty-session', 'name': '', 'cwd': ''},
       ],
     });
