@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'src/hub_client.dart';
@@ -40,6 +41,9 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
   static const _prefServerUrl = 'hub_server_url';
   static const _prefToken = 'hub_token';
   static const _prefRecentConnections = 'hub_recent_connections';
+  static const _secureTokenKey = 'hub_token';
+  static const _secureRecentTokenPrefix = 'hub_recent_token_';
+  static const _secureStorage = FlutterSecureStorage();
 
   final TextEditingController _serverController = TextEditingController();
   final TextEditingController _tokenController = TextEditingController();
@@ -83,7 +87,15 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
   Future<void> _loadSavedConnection() async {
     final prefs = await SharedPreferences.getInstance();
     final savedUrl = prefs.getString(_prefServerUrl);
-    final savedToken = prefs.getString(_prefToken);
+    final legacyToken = prefs.getString(_prefToken);
+    var savedToken = await _secureStorage.read(key: _secureTokenKey);
+    if ((savedToken == null || savedToken.isEmpty) &&
+        legacyToken != null &&
+        legacyToken.isNotEmpty) {
+      savedToken = legacyToken;
+      await _secureStorage.write(key: _secureTokenKey, value: legacyToken);
+      await prefs.remove(_prefToken);
+    }
     if (savedUrl != null && savedUrl.isNotEmpty) {
       _serverController.text = savedUrl;
     }
@@ -92,14 +104,27 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
     }
     final recentJson = prefs.getStringList(_prefRecentConnections);
     if (recentJson != null) {
-      _recentConnections = recentJson.map((e) {
-        final parts = e.split('|||');
-        return {
+      _recentConnections = [];
+      for (final entry in recentJson) {
+        final parts = entry.split('|||');
+        final url = parts.length > 1 ? parts[1] : '';
+        var token = await _secureStorage.read(key: _recentTokenKey(url));
+        if ((token == null || token.isEmpty) && parts.length > 2) {
+          token = parts[2];
+          if (url.isNotEmpty && token.isNotEmpty) {
+            await _secureStorage.write(key: _recentTokenKey(url), value: token);
+          }
+        }
+        _recentConnections.add({
           'name': parts[0],
-          'url': parts.length > 1 ? parts[1] : '',
-          'token': parts.length > 2 ? parts[2] : '',
-        };
-      }).toList();
+          'url': url,
+          'token': token ?? '',
+        });
+      }
+      await prefs.setStringList(
+        _prefRecentConnections,
+        _recentConnections.map((c) => '${c['name']}|||${c['url']}').toList(),
+      );
     }
     if (savedUrl != null &&
         savedUrl.isNotEmpty &&
@@ -109,13 +134,18 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
     }
   }
 
+  String _recentTokenKey(String url) => '$_secureRecentTokenPrefix$url';
+
   Future<void> _saveConnection() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_prefServerUrl, _serverController.text);
-    await prefs.setString(_prefToken, _tokenController.text);
+    await prefs.remove(_prefToken);
     // Update recent connections
     final url = _serverController.text.trim();
     final token = _tokenController.text.trim();
+    if (token.isNotEmpty) {
+      await _secureStorage.write(key: _secureTokenKey, value: token);
+    }
     if (url.isNotEmpty && token.isNotEmpty) {
       final name = Uri.tryParse(url)?.host ?? url;
       _recentConnections.removeWhere((c) => c['url'] == url);
@@ -123,11 +153,29 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
       if (_recentConnections.length > 5) {
         _recentConnections = _recentConnections.sublist(0, 5);
       }
+      final activeUrls = _recentConnections.map((c) => c['url'] ?? '').toSet();
+      for (final connection in _recentConnections) {
+        final recentUrl = connection['url'] ?? '';
+        final recentToken = connection['token'] ?? '';
+        if (recentUrl.isNotEmpty && recentToken.isNotEmpty) {
+          await _secureStorage.write(
+            key: _recentTokenKey(recentUrl),
+            value: recentToken,
+          );
+        }
+      }
+      final allSecureValues = await _secureStorage.readAll();
+      for (final key in allSecureValues.keys) {
+        if (key.startsWith(_secureRecentTokenPrefix)) {
+          final recentUrl = key.substring(_secureRecentTokenPrefix.length);
+          if (!activeUrls.contains(recentUrl)) {
+            await _secureStorage.delete(key: key);
+          }
+        }
+      }
       await prefs.setStringList(
         _prefRecentConnections,
-        _recentConnections
-            .map((c) => '${c['name']}|||${c['url']}|||${c['token']}')
-            .toList(),
+        _recentConnections.map((c) => '${c['name']}|||${c['url']}').toList(),
       );
     }
   }

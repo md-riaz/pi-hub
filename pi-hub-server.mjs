@@ -13,15 +13,19 @@ const HUB_DIR = path.join(PI_HOME, "pi-hub");
 const CONFIG_PATH = path.join(HUB_DIR, "config.json");
 const PID_PATH = path.join(HUB_DIR, "server.pid");
 
+const SERVER_VERSION = "2.0.34";
+
 const DEFAULT_CONFIG = {
   enabled: true,
-  host: "0.0.0.0",
+  host: "127.0.0.1",
   port: 17878,
   token: "",
   historyLimit: 500,
   staleThresholdMs: 120_000,
   commandTimeoutMs: 300_000,
   commandHistoryLimit: 500,
+  allowQueryToken: false,
+  corsOrigins: [],
   agentCreation: {
     piCommand: "pi",
     defaultArgs: [],
@@ -61,6 +65,8 @@ function ensureConfig() {
   if (!Number.isFinite(Number(config.staleThresholdMs))) config.staleThresholdMs = DEFAULT_CONFIG.staleThresholdMs;
   if (!Number.isFinite(Number(config.commandTimeoutMs))) config.commandTimeoutMs = DEFAULT_CONFIG.commandTimeoutMs;
   if (!Number.isFinite(Number(config.commandHistoryLimit))) config.commandHistoryLimit = DEFAULT_CONFIG.commandHistoryLimit;
+  config.allowQueryToken = config.allowQueryToken === true;
+  config.corsOrigins = Array.isArray(config.corsOrigins) ? config.corsOrigins.filter(origin => typeof origin === "string" && origin.trim()).map(origin => origin.trim()) : [];
   config.agentCreation = normalizeAgentCreationConfig(config.agentCreation);
   config.staleThresholdMs = Math.max(0, Number(config.staleThresholdMs));
   config.commandTimeoutMs = Math.max(1000, Number(config.commandTimeoutMs));
@@ -181,7 +187,7 @@ function snapshot() {
       host: config.host,
       port: Number(config.port),
       time: nowIso(),
-      version: "1.0.0",
+      version: SERVER_VERSION,
       schemaVersion: 2,
       staleThresholdMs: Number(config.staleThresholdMs),
       commandTimeoutMs: Number(config.commandTimeoutMs),
@@ -195,23 +201,38 @@ function snapshot() {
   };
 }
 
-function sendJson(res, status, body) {
+function corsOrigin(req) {
+  const origin = req.headers.origin;
+  if (!origin) return undefined;
+  return config.corsOrigins.includes(origin) ? origin : undefined;
+}
+
+function corsHeaders(req) {
+  const origin = corsOrigin(req);
+  if (!origin) return {};
+  return {
+    "access-control-allow-origin": origin,
+    "access-control-allow-headers": "content-type, authorization",
+    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "vary": "origin",
+  };
+}
+
+function sendJson(req, res, status, body) {
   const text = JSON.stringify(body);
   res.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
     "content-length": Buffer.byteLength(text),
-    "access-control-allow-origin": "*",
-    "access-control-allow-headers": "content-type, authorization",
-    "access-control-allow-methods": "GET,POST,OPTIONS",
+    ...corsHeaders(req),
   });
   res.end(text);
 }
 
-function sendText(res, status, text) {
+function sendText(req, res, status, text) {
   res.writeHead(status, {
     "content-type": "text/plain; charset=utf-8",
     "content-length": Buffer.byteLength(text),
-    "access-control-allow-origin": "*",
+    ...corsHeaders(req),
   });
   res.end(text);
 }
@@ -239,7 +260,7 @@ function readBody(req) {
 function getToken(req, url) {
   const auth = req.headers.authorization || "";
   if (auth.toLowerCase().startsWith("bearer ")) return auth.slice(7).trim();
-  return url.searchParams.get("token") || "";
+  return config.allowQueryToken ? url.searchParams.get("token") || "" : "";
 }
 
 function isAuthorized(req, url) {
@@ -1002,17 +1023,14 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
 
   if (req.method === "OPTIONS") {
-    res.writeHead(204, {
-      "access-control-allow-origin": "*",
-      "access-control-allow-headers": "content-type, authorization",
-      "access-control-allow-methods": "GET,POST,OPTIONS",
-    });
+    const headers = corsHeaders(req);
+    res.writeHead(Object.keys(headers).length ? 204 : 403, headers);
     res.end();
     return;
   }
 
   if (url.pathname === "/") {
-    sendText(res, 200, [
+    sendText(req, res, 200, [
       "Pi Hub server running.",
       `Port: ${config.port}`,
       `LAN: ${localAddresses().map(ip => `http://${ip}:${config.port}`).join(", ") || "none"}`,
@@ -1022,18 +1040,28 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (!isAuthorized(req, url)) {
-    sendJson(res, 401, { error: "unauthorized" });
+    sendJson(req, res, 401, { error: "unauthorized" });
     return;
   }
 
   try {
     if (req.method === "GET" && url.pathname === "/api/health") {
-      sendJson(res, 200, { ok: true, pid: process.pid, startedAt, host: config.host, port: Number(config.port), addresses: localAddresses() });
+      sendJson(req, res, 200, {
+        ok: true,
+        pid: process.pid,
+        startedAt,
+        host: config.host,
+        port: Number(config.port),
+        addresses: localAddresses(),
+        version: SERVER_VERSION,
+        schemaVersion: 2,
+        capabilities: serverCapabilities(),
+      });
       return;
     }
 
     if (req.method === "GET" && url.pathname === "/api/snapshot") {
-      sendJson(res, 200, snapshot());
+      sendJson(req, res, 200, snapshot());
       return;
     }
 
@@ -1048,7 +1076,7 @@ const server = http.createServer(async (req, res) => {
         "content-type": "text/event-stream; charset=utf-8",
         "cache-control": "no-cache, no-transform",
         connection: "keep-alive",
-        "access-control-allow-origin": "*",
+        ...corsHeaders(req),
       });
       res.write(`data: ${JSON.stringify({ seq: ++eventSeq, type: "snapshot", timestamp: Date.now(), snapshot: snapshot() })}\n\n`);
       const heartbeat = setInterval(() => {
@@ -1070,7 +1098,7 @@ const server = http.createServer(async (req, res) => {
       const event = normalizeEvent({ ...info, type: "register" }, info.id, "register");
       const session = applyEvent(event);
       broadcast({ type: "session_updated", reason: "register", session: publicSession(session), event });
-      sendJson(res, 200, { ok: true, session: publicSession(session) });
+      sendJson(req, res, 200, { ok: true, session: publicSession(session) });
       return;
     }
 
@@ -1078,7 +1106,7 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       const sessionId = requireSessionId(body);
       removeSessionState(sessionId, "unregister");
-      sendJson(res, 200, { ok: true });
+      sendJson(req, res, 200, { ok: true });
       return;
     }
 
@@ -1103,7 +1131,7 @@ const server = http.createServer(async (req, res) => {
       if (Array.isArray(event.payload.slashCommands)) session.slashCommands = event.payload.slashCommands;
       if (Array.isArray(event.payload.todos)) session.todos = event.payload.todos;
       broadcast({ type: "session_updated", reason: "presence", session: publicSession(session), event });
-      sendJson(res, 200, { ok: true });
+      sendJson(req, res, 200, { ok: true });
       return;
     }
 
@@ -1113,7 +1141,7 @@ const server = http.createServer(async (req, res) => {
       const event = normalizeEvent(body.event, sessionId);
       const session = applyEvent(event);
       broadcast({ type: "session_updated", reason: event.legacyType || event.type || "event", session: publicSession(session), event });
-      sendJson(res, 200, { ok: true });
+      sendJson(req, res, 200, { ok: true });
       return;
     }
 
@@ -1124,11 +1152,11 @@ const server = http.createServer(async (req, res) => {
         request = validateAgentCreationRequest(body);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        sendJson(res, 400, { ok: false, error: message });
+        sendJson(req, res, 400, { ok: false, error: message });
         return;
       }
       const result = await startAgentCreation(request);
-      sendJson(res, 200, { ok: true, ...result });
+      sendJson(req, res, 200, { ok: true, ...result });
       return;
     }
 
@@ -1140,22 +1168,22 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       if (action === "cancel") {
         const command = cancelQueuedCommand(commandId);
-        sendJson(res, 200, { ok: true, command: publicCommand(command) });
+        sendJson(req, res, 200, { ok: true, command: publicCommand(command) });
         return;
       }
       if (action === "update") {
         const command = updateQueuedCommand(commandId, { text: String(body.text || "").trim() });
-        sendJson(res, 200, { ok: true, command: publicCommand(command) });
+        sendJson(req, res, 200, { ok: true, command: publicCommand(command) });
         return;
       }
-      sendJson(res, 404, { error: "unknown command action" });
+      sendJson(req, res, 404, { error: "unknown command action" });
       return;
     }
 
     if (req.method === "POST" && url.pathname === "/api/collaboration/messages") {
       const body = await readBody(req);
       const result = routeCollaborationMessage(body);
-      sendJson(res, 200, {
+      sendJson(req, res, 200, {
         ok: true,
         collaborationMessage: result.message,
         commands: result.commands.map(publicCommand),
@@ -1169,14 +1197,14 @@ const server = http.createServer(async (req, res) => {
       const text = String(body.text || "").trim();
       if (!text) throw new Error("text required");
       if (!sessions.has(sessionId)) {
-        sendJson(res, 404, { error: "session not found" });
+        sendJson(req, res, 404, { error: "session not found" });
         return;
       }
       const commandType = text.startsWith("/") ? "slash_command" : "user_message";
       const command = createCommand(sessionId, commandType, { text });
       const session = getOrCreateSession(sessionId);
       recordOutgoingUserMessage(session, command, text);
-      sendJson(res, 200, { ok: true, commandId: command.id });
+      sendJson(req, res, 200, { ok: true, commandId: command.id });
       return;
     }
 
@@ -1188,7 +1216,7 @@ const server = http.createServer(async (req, res) => {
       if (!allowed.has(action)) throw new Error("unsupported control action");
       if (action === "set_model" && !body.modelId) throw new Error("modelId required for set_model");
       if (!sessions.has(sessionId)) {
-        sendJson(res, 404, { error: "session not found" });
+        sendJson(req, res, 404, { error: "session not found" });
         return;
       }
       const payload = typeof body.modelId === "string" ? { modelId: body.modelId } : {};
@@ -1197,7 +1225,7 @@ const server = http.createServer(async (req, res) => {
       const event = normalizeEvent({ type: "command_queued", command: { id: command.id, type: command.type, timestamp: command.createdAt } }, sessionId, "command_queued");
       session.lastEvent = event;
       broadcast({ type: "command_queued", sessionId, command: publicCommand(command) });
-      sendJson(res, 200, { ok: true, commandId: command.id });
+      sendJson(req, res, 200, { ok: true, commandId: command.id });
       return;
     }
 
@@ -1217,7 +1245,7 @@ const server = http.createServer(async (req, res) => {
         }
       }
       commandQueues.set(sessionId, []);
-      sendJson(res, 200, { ok: true, commands: deliverable });
+      sendJson(req, res, 200, { ok: true, commands: deliverable });
       return;
     }
 
@@ -1228,7 +1256,7 @@ const server = http.createServer(async (req, res) => {
         const stat = fs.statSync(dirPath);
         if (!stat.isDirectory()) throw new Error("not a directory");
       } catch {
-        sendJson(res, 400, { error: "invalid directory path" });
+        sendJson(req, res, 400, { error: "invalid directory path" });
         return;
       }
       const limit = 500;
@@ -1245,7 +1273,7 @@ const server = http.createServer(async (req, res) => {
           path: path.join(dirPath, e.name),
           isDirectory: e.isDirectory(),
         }));
-      sendJson(res, 200, { ok: true, path: dirPath, parent: path.dirname(dirPath), items, truncated: visibleEntries.length > limit, total: visibleEntries.length, limit });
+      sendJson(req, res, 200, { ok: true, path: dirPath, parent: path.dirname(dirPath), items, truncated: visibleEntries.length > limit, total: visibleEntries.length, limit });
       return;
     }
 
@@ -1256,11 +1284,11 @@ const server = http.createServer(async (req, res) => {
       const attachments = Array.isArray(body.attachments) ? body.attachments : [];
       if (!text && attachments.length === 0) throw new Error("text or attachments required");
       if (!sessions.has(sessionId)) {
-        sendJson(res, 404, { error: "session not found" });
+        sendJson(req, res, 404, { error: "session not found" });
         return;
       }
       if (attachments.length > 5) {
-        sendJson(res, 400, { error: "maximum 5 attachments" });
+        sendJson(req, res, 400, { error: "maximum 5 attachments" });
         return;
       }
       const session = getOrCreateSession(sessionId);
@@ -1282,7 +1310,7 @@ const server = http.createServer(async (req, res) => {
         if (!data) continue;
         const bytes = Buffer.from(data, "base64");
         if (bytes.length > 5 * 1024 * 1024) {
-          sendJson(res, 400, { error: `Attachment ${originalName} exceeds 5MB limit` });
+          sendJson(req, res, 400, { error: `Attachment ${originalName} exceeds 5MB limit` });
           return;
         }
         const isImage = mimeType.startsWith("image/");
@@ -1319,13 +1347,13 @@ const server = http.createServer(async (req, res) => {
         hasAttachments: savedAttachments.length > 0,
         attachmentMode: modelSupportsImages ? "inline-image" : "file-path",
       });
-      sendJson(res, 200, { ok: true, commandId: command.id, attachments: savedAttachments });
+      sendJson(req, res, 200, { ok: true, commandId: command.id, attachments: savedAttachments });
       return;
     }
 
-    sendJson(res, 404, { error: "not found" });
+    sendJson(req, res, 404, { error: "not found" });
   } catch (error) {
-    sendJson(res, 400, { error: error instanceof Error ? error.message : String(error) });
+    sendJson(req, res, 400, { error: error instanceof Error ? error.message : String(error) });
   }
 });
 

@@ -1,11 +1,11 @@
 # Pi Hub v2 protocol notes
 
-Pi Hub v2 is additive. Existing v1 routes stay available while new mobile mission-control surfaces adopt versioned events and richer snapshot fields.
+Pi Hub v2 is additive. Pi Hub uses canonical `/api/...` routes while mobile mission-control surfaces use versioned events and richer snapshot fields.
 
 ## Compatibility
 
-- Auth remains bearer token via `Authorization: Bearer <token>` or `?token=<token>`.
-- Existing v1 routes keep their response shape: `/api/register`, `/api/presence`, `/api/event`, `/api/stream`, `/api/snapshot`, `/api/send`, `/api/control`, `/api/poll`.
+- Auth uses `Authorization: Bearer <token>`. Query-string tokens are disabled by default and only available when `allowQueryToken` is explicitly enabled for manual debugging.
+- Canonical routes keep their response shape: `/api/register`, `/api/presence`, `/api/event`, `/api/stream`, `/api/snapshot`, `/api/send`, `/api/control`, `/api/poll`.
 - New fields are optional for older clients. Unknown fields should be ignored.
 - Server normalizes v1 payloads into internal v2 events before applying state changes.
 
@@ -53,31 +53,23 @@ Fields:
     "host": "0.0.0.0",
     "port": 17878,
     "time": "2026-02-03T04:05:06.000Z",
-    "version": "1.0.0",
+    "version": "2.0.34",
     "schemaVersion": 2,
     "capabilities": {
       "health": true,
       "eventEnvelope": true,
-      "commandLifecycle": false,
-      "agentCreation": false,
+      "commandLifecycle": true,
+      "agentCreation": true,
       "browse": true,
       "attachments": true,
-      "pushDevices": true,
-      "pushNotifications": {
-        "enabled": false,
-        "configured": false,
-        "provider": "ntfy",
-        "ntfy": {
-          "serverUrl": "https://ntfy.sh",
-          "topicConfigured": false,
-          "tokenConfigured": false
-        }
-      }
+      "collaboration": true
     }
   },
   "sessions": []
 }
 ```
+
+Push devices/notifications are not part of the current canonical server surface.
 
 ## Health
 
@@ -126,44 +118,9 @@ Statuses: `queued`, `delivered`, `applied`, `failed`, `expired`, `cancelled`.
 
 Current v1 command payloads keep `id`, `type`, `text`, `modelId`, and `timestamp` for extension compatibility.
 
-## Push device
-
-Provider-neutral device registration does not send notifications unless a provider is configured.
-
-```json
-{
-  "deviceId": "android-demo-device",
-  "platform": "android",
-  "provider": "ntfy",
-  "token": "provider-token-or-topic-not-returned-in-snapshot",
-  "enabled": true,
-  "scopes": ["critical"],
-  "updatedAt": 1770000000000
-}
-```
-
-`POST /api/v2/push/devices` registers or updates by `deviceId`. Send `{ "action": "disable", "deviceId": "android-demo-device" }` to disable. `GET /api/v2/push/devices` returns public records only:
-
-```json
-{
-  "deviceId": "android-demo-device",
-  "platform": "android",
-  "provider": "ntfy",
-  "enabled": true,
-  "scopes": ["critical"],
-  "label": "Pi Hub Android app",
-  "createdAt": 1770000000000,
-  "updatedAt": 1770000000000,
-  "disabledAt": null,
-  "hasToken": true
-}
-```
-
-Snapshots must not expose provider tokens. `server.capabilities.pushNotifications` reports whether a provider is enabled/configured. Current low-friction provider is `ntfy`; dispatch stays disabled unless `push.enabled=true`, `push.provider="ntfy"`, and an ntfy topic (server default or device token/topic) exist in config.
-
 ## Agent creation
 
-Agent creation is disabled by default. When enabled, mobile submits a bounded request:
+Agent creation is always advertised as capable. Mobile submits a bounded request:
 
 ```json
 {
@@ -178,7 +135,7 @@ Server resolves `cwd`, requires it to be an existing directory on the hub host, 
 
 ## Browse remote directories
 
-`GET /api/v2/browse?path=/home/user/projects` returns directory listing for the host machine. Requires `browse` capability.
+`GET /api/browse?path=/home/user/projects` returns directory listing for the host machine. Requires `browse` capability.
 
 Request query params: `?path=<absolute-path>` (defaults to the hub host home directory when omitted).
 
@@ -200,7 +157,7 @@ Server resolves the requested path and rejects invalid or non-directory paths.
 
 ## Send attachment
 
-`POST /api/v2/send-attachment` sends files as attachments to a session. Requires `attachments` capability.
+`POST /api/send-attachment` sends files as attachments to a session. Requires `attachments` capability.
 
 Request body:
 

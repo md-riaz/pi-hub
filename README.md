@@ -1,6 +1,6 @@
 # Pi Hub
 
-**Version: 2.0.1+1**
+**Version: 2.0.34+34**
 
 Pi Hub is a local-first mission-control dashboard for Pi Coding Agent sessions. It combines a Pi extension, a small HTTP/SSE hub server, and a Flutter Android app so you can monitor and control multiple running agents from a phone over any network that can reach the hub host.
 
@@ -15,8 +15,8 @@ Pi Hub is a local-first mission-control dashboard for Pi Coding Agent sessions. 
 - Real file attachments: pick files, pick images, paste from clipboard.
 - Server browse endpoint for remote directory listing.
 - Model sheet with scrollable list.
-- Optional provider-neutral push registration with an `ntfy` implementation, disabled by default.
-- Optional guarded agent creation endpoint for starting Pi in any existing directory on the hub host, disabled by default.
+- Agent creation endpoint for starting Pi in any existing directory on the hub host.
+- Bearer-token API auth, with query-string tokens disabled by default.
 - Memory-only hub state by default: no transcript database and no cloud dependency.
 
 ## Architecture
@@ -32,8 +32,8 @@ Hub host
   └─ pi-hub-server.mjs
       ├─ token-protected HTTP JSON API
       ├─ SSE live stream for the mobile app
-      ├─ in-memory sessions, commands, push devices, and audit ring
-      └─ optional guarded process creation in existing directories
+      ├─ in-memory sessions and commands
+      └─ guarded process creation in existing directories
 
 Android device
   └─ apps/pi_hub_app
@@ -138,7 +138,7 @@ Common URLs (the app adds `http://` automatically if you enter only `host:port`)
 - Phone on same WiFi/LAN: `http://<hub-host-lan-ip>:17878`
 - Phone over VPN or other network: use any IP that reaches the hub host
 
-Run `/hub info` to see detected LAN IPs. The server binds `0.0.0.0` by default so any network interface works. Allow inbound TCP `17878` through the hub host firewall if needed.
+Run `/hub info` to see detected LAN IPs. The server binds `127.0.0.1` by default. Set `host` to `0.0.0.0` only when the phone reaches the hub over a trusted LAN/VPN/Tailscale path, then allow inbound TCP `17878` through the hub host firewall if needed.
 
 ## Daily usage
 
@@ -164,25 +164,15 @@ Example:
 ```json
 {
   "enabled": true,
-  "host": "0.0.0.0",
+  "host": "127.0.0.1",
   "port": 17878,
   "token": "generated-token",
   "historyLimit": 500,
   "autoStartServer": true,
   "pollIntervalMs": 1500,
-  "push": {
-    "enabled": false,
-    "provider": "ntfy",
-    "defaultScopes": ["critical", "command_failure", "stale", "offline"],
-    "ntfy": {
-      "serverUrl": "https://ntfy.sh",
-      "topic": "",
-      "token": "",
-      "priority": 4
-    }
-  },
+  "allowQueryToken": false,
+  "corsOrigins": [],
   "agentCreation": {
-    "enabled": false,
     "piCommand": "pi",
     "defaultArgs": [],
     "testMode": false
@@ -193,48 +183,27 @@ Example:
 Key fields:
 
 - `enabled`: enables the extension bridge.
-- `host`: bind address. Use `0.0.0.0` for phone access on a trusted network.
+- `host`: bind address. Defaults to `127.0.0.1`; use `0.0.0.0` only for trusted LAN/VPN/Tailscale access.
 - `port`: hub server port.
 - `token`: bearer token required by the app and API.
 - `historyLimit`: maximum in-memory transcript items per session.
 - `autoStartServer`: lets the extension start the hub automatically.
 - `pollIntervalMs`: how often sessions poll for mobile commands.
-- `push.enabled`: enables external push dispatch. In-app SSE notifications work without this.
-- `agentCreation.enabled`: enables API/mobile creation of new Pi processes. Keep disabled unless you understand the risk.
+- `allowQueryToken`: optional manual/debug compatibility for `?token=` URLs. Keep `false`; app and extension use `Authorization: Bearer`.
+- `corsOrigins`: browser CORS allowlist. Empty disables browser cross-origin access.
+- `agentCreation`: controls which Pi command/default args are used for creating new sessions.
 
 Restart Pi sessions and the hub server after changing configuration.
 
-## Optional push notifications
+## Agent creation
 
-Push is disabled by default. The current low-friction provider is [`ntfy`](https://ntfy.sh/). Configure a private or self-hosted topic before enabling it:
-
-```json
-{
-  "push": {
-    "enabled": true,
-    "provider": "ntfy",
-    "ntfy": {
-      "serverUrl": "https://ntfy.sh",
-      "topic": "your-private-topic",
-      "token": "",
-      "priority": 4
-    }
-  }
-}
-```
-
-Provider tokens/topics are not exposed in snapshots; public device records only report `hasToken`.
-
-## Optional agent creation
-
-Agent creation starts a new local process on the hub host. It is disabled by default and accepts any existing directory as the process working directory.
+Agent creation starts a new local process on the hub host and accepts any existing directory as the process working directory.
 
 Example configuration:
 
 ```json
 {
   "agentCreation": {
-    "enabled": true,
     "piCommand": "pi",
     "defaultArgs": [],
     "testMode": false
@@ -247,9 +216,8 @@ Security model:
 - The app cannot choose an arbitrary executable.
 - The server launches `agentCreation.piCommand` with `shell: false`.
 - Requested working directories are resolved and must already exist as directories on the hub host.
-- Accepted, rejected, succeeded, and failed attempts are recorded in the in-memory audit ring.
 
-Only enable this feature on trusted networks. Bearer-token access can start Pi in any existing directory on the hub host.
+Bearer-token access can start Pi in any existing directory on the hub host. Keep the hub on trusted LAN/VPN/Tailscale paths.
 
 ## Manual server run
 
@@ -262,14 +230,14 @@ npm run hub:server
 Health check:
 
 ```bash
-curl "http://127.0.0.1:17878/api/health?token=<token>"
+curl -H "Authorization: Bearer <token>" "http://127.0.0.1:17878/api/health"
 ```
 
 ## API summary
 
-All API routes except `/` require either `Authorization: Bearer <token>` or `?token=<token>`.
+All API routes except `/` require `Authorization: Bearer <token>`. Query-string tokens are disabled by default and only accepted when `allowQueryToken` is explicitly set to `true`.
 
-### v1-compatible routes
+### Canonical routes
 
 - `GET /api/health` — server status and local addresses.
 - `GET /api/snapshot` — full session snapshot.
@@ -282,28 +250,26 @@ All API routes except `/` require either `Authorization: Bearer <token>` or `?to
 - `POST /api/control` — queue `abort`, `compact`, `set_model`, or `shutdown`.
 - `GET /api/poll` — Pi session command polling endpoint.
 
-### v2 routes
+### Extended routes
 
-- `GET /api/v2/push/devices` — list public push device records and provider status.
-- `POST /api/v2/push/devices` — register/update/disable a push device.
-- `POST /api/v2/agents/create` — guarded agent creation in any existing directory.
-- `GET /api/v2/browse` — list remote directories.
-- `POST /api/v2/send-attachment` — send files as attachments.
+- `POST /api/agents/create` — guarded agent creation in any existing directory.
+- `GET /api/browse` — list remote directories.
+- `POST /api/send-attachment` — send files as attachments.
 
 See [`docs/pi-hub-v2-protocol.md`](docs/pi-hub-v2-protocol.md) for protocol notes.
 
 ## Security notes
 
-Pi Hub is intended for trusted network environments (LAN, VPN, etc.).
+Pi Hub is intended for trusted network environments (LAN, VPN, Tailscale, etc.).
 
 Do not expose the hub directly to the public internet without additional hardening. Before public exposure, add HTTPS, stronger authentication, token rotation, rate limiting, and persistent audit controls.
 
-Protect `~/.pi/agent/pi-hub/config.json`; it contains the bearer token and may contain push provider credentials. If agent creation is enabled, bearer-token access can start new local processes in any existing directory on the hub host.
+Protect `~/.pi/agent/pi-hub/config.json`; it contains the bearer token. Bearer-token access can start new local processes in any existing directory on the hub host.
 
 ## Troubleshooting
 
 - **No sessions visible**: restart Pi sessions after installing the extension, then run `/hub start`.
-- **Phone cannot connect**: run `/hub info` to see LAN IPs, keep `host: "0.0.0.0"`, and check firewall rules for TCP `17878`.
+- **Phone cannot connect**: run `/hub info` to see LAN IPs, set `host: "0.0.0.0"` for trusted LAN/VPN access, and check firewall rules for TCP `17878`.
 - **Unauthorized**: copy the current token from `~/.pi/agent/pi-hub/config.json`.
 - **Stale server state**: stop the old Node process or remove the stale `~/.pi/agent/pi-hub/server.pid`, then run `/hub start`.
 - **Emulator cannot connect**: use `http://10.0.2.2:17878`, not `localhost`.

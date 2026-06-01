@@ -41,7 +41,7 @@ interface PendingMobileInput {
 }
 
 const HUB_PROTOCOL_VERSION = 2;
-const HUB_CLIENT_VERSION = "0.1.4";
+const HUB_CLIENT_VERSION = "2.0.34";
 const HUB_CLIENT_NAME = "pi-hub-extension";
 
 const DEFAULT_CONFIG: PiHubConfig = {
@@ -184,7 +184,8 @@ async function waitForServer(config: PiHubConfig, timeoutMs = 5000): Promise<voi
 	const start = Date.now();
 	while (Date.now() - start < timeoutMs) {
 		try {
-			const response = await fetch(`${serverBaseUrl(config)}/api/health?token=${encodeURIComponent(config.token)}`, {
+			const response = await fetch(`${serverBaseUrl(config)}/api/health`, {
+				headers: { authorization: `Bearer ${config.token}` },
 				signal: AbortSignal.timeout(1000),
 			});
 			if (response.ok) return;
@@ -196,7 +197,8 @@ async function waitForServer(config: PiHubConfig, timeoutMs = 5000): Promise<voi
 
 async function ensureServer(config: PiHubConfig): Promise<void> {
 	try {
-		const response = await fetch(`${serverBaseUrl(config)}/api/health?token=${encodeURIComponent(config.token)}`, {
+		const response = await fetch(`${serverBaseUrl(config)}/api/health`, {
+			headers: { authorization: `Bearer ${config.token}` },
 			signal: AbortSignal.timeout(1000),
 		});
 		if (response.ok) return;
@@ -237,8 +239,10 @@ async function post(config: PiHubConfig, path: string, body: unknown): Promise<v
 
 async function getJson(config: PiHubConfig, path: string): Promise<any> {
 	const url = new URL(`${serverBaseUrl(config)}${path}`);
-	url.searchParams.set("token", config.token);
-	const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+	const response = await fetch(url, {
+		headers: { authorization: `Bearer ${config.token}` },
+		signal: AbortSignal.timeout(5000),
+	});
 	if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
 	return response.json();
 }

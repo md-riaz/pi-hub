@@ -18,13 +18,13 @@ The product is for controlling many Pi agents from a phone. It is not a hosted S
 
 Reason: user wants live mission control, not a transcript database. Old/stale agents should disappear. Persisting session history would reintroduce stale clutter.
 
-### `0.0.0.0:17878` HTTP server
+### `127.0.0.1:17878` default HTTP server
 
-Reason: phone needs to reach host over LAN/VPN/public route. HTTP is simpler for local/trusted networks. Android cleartext is enabled for this.
+Reason: private-by-default is safer. Phone access over LAN/VPN/Tailscale requires opting into `host: "0.0.0.0"` and opening the firewall. HTTP is simpler for local/trusted networks. Android cleartext is enabled for hub connections; use LAN/VPN/Tailscale or an HTTPS reverse proxy for routed access.
 
-### Token auth only
+### Bearer token auth
 
-Reason: enough for trusted LAN/VPN use. Not enough for public internet; hardening is future work.
+Reason: enough for trusted LAN/VPN use. App and extension use `Authorization: Bearer <token>` for every request, including SSE and browse/attachment routes. Query-string tokens are disabled by default (`allowQueryToken: false`) and only exist for manual/debug compatibility.
 
 ### `/hub stop` vs `/hub server stop`
 
@@ -95,7 +95,7 @@ Read:
 Pi supports `sendUserMessage` with text and image content arrays. Implementation:
 
 - Flutter file/image picker and clipboard paste for selecting attachments.
-- `POST /api/v2/send-attachment` with `{sessionId, text, attachments: [{name, mimeType, data}]}`.
+- `POST /api/send-attachment` with `{sessionId, text, attachments: [{name, mimeType, data}]}`.
 - Server validates size/type (max 5 attachments, images up to 5 MB, text files up to 100k chars) and queues command.
 - Extension converts to Pi `TextContent | ImageContent` array via `pi.sendUserMessage`.
 - Only inline images and text/code files are supported; arbitrary binaries are rejected.

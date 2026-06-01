@@ -110,8 +110,12 @@ class HubClient {
     return withScheme.replaceAll(RegExp(r'/+$'), '');
   }
 
-  Uri _uri(String path) =>
-      Uri.parse('$baseUrl$path').replace(queryParameters: {'token': token});
+  Uri _uri(String path, [Map<String, String>? queryParameters]) =>
+      Uri.parse('$baseUrl$path').replace(queryParameters: queryParameters);
+
+  void _authorize(HttpClientRequest request) {
+    request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+  }
 
   HttpClient _newHttpClient() {
     return HttpClient()..connectionTimeout = const Duration(seconds: 8);
@@ -121,6 +125,7 @@ class HubClient {
     final client = _newHttpClient();
     try {
       final request = await client.getUrl(_uri('/api/snapshot'));
+      _authorize(request);
       final response = await request.close();
       final body = await response.transform(utf8.decoder).join();
       if (response.statusCode != 200) {
@@ -138,6 +143,7 @@ class HubClient {
     _streamClient?.close(force: true);
     _streamClient = _newHttpClient();
     final request = await _streamClient!.getUrl(_uri('/api/stream'));
+    _authorize(request);
     final response = await request.close();
     if (response.statusCode != 200) {
       final body = await response.transform(utf8.decoder).join();
@@ -220,7 +226,7 @@ class HubClient {
     try {
       final request = await client.postUrl(Uri.parse('$baseUrl$path'));
       request.headers.contentType = ContentType.json;
-      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+      _authorize(request);
       request.write(jsonEncode(payload));
       final response = await request.close();
       final body = await response.transform(utf8.decoder).join();
@@ -241,7 +247,7 @@ class HubClient {
         Uri.parse('$baseUrl/api/agents/create'),
       );
       request.headers.contentType = ContentType.json;
-      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+      _authorize(request);
       request.write(jsonEncode(requestBody.toJson()));
       final response = await request.close();
       final body = await response.transform(utf8.decoder).join();
@@ -274,7 +280,7 @@ class HubClient {
     try {
       final request = await client.postUrl(Uri.parse('$baseUrl/api/send'));
       request.headers.contentType = ContentType.json;
-      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+      _authorize(request);
       request.write(jsonEncode({'sessionId': sessionId, 'text': text}));
       final response = await request.close();
       final body = await response.transform(utf8.decoder).join();
@@ -306,7 +312,7 @@ class HubClient {
     try {
       final request = await client.postUrl(Uri.parse('$baseUrl/api/control'));
       request.headers.contentType = ContentType.json;
-      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+      _authorize(request);
       final payload = <String, String>{
         'sessionId': sessionId,
         'action': action,
@@ -331,10 +337,8 @@ class HubClient {
   Future<BrowseResult> browseDirectory(String dirPath) async {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
     try {
-      final uri = Uri.parse(
-        '$baseUrl/api/browse?path=${Uri.encodeComponent(dirPath)}&token=$token',
-      );
-      final req = await client.getUrl(uri);
+      final req = await client.getUrl(_uri('/api/browse', {'path': dirPath}));
+      _authorize(req);
       final res = await req.close().timeout(const Duration(seconds: 8));
       final body = await res.transform(utf8.decoder).join();
       if (res.statusCode != 200) throw Exception('${res.statusCode}: $body');
@@ -356,9 +360,9 @@ class HubClient {
   }) async {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
     try {
-      final uri = Uri.parse('$baseUrl/api/send-attachment?token=$token');
-      final req = await client.postUrl(uri);
+      final req = await client.postUrl(_uri('/api/send-attachment'));
       req.headers.contentType = ContentType.json;
+      _authorize(req);
       req.write(
         jsonEncode({
           'sessionId': sessionId,
