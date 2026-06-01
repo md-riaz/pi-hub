@@ -6,6 +6,7 @@ import 'tool_group_card.dart';
 import 'terminal_card.dart';
 import 'edit_card.dart';
 import 'waiting_card.dart';
+import 'tui_event_card.dart';
 
 class EventRenderer extends StatelessWidget {
   final HubItem event;
@@ -62,7 +63,7 @@ class EventRenderer extends StatelessWidget {
       case 'tool':
         return _toolEventCard(event);
       case 'bash':
-        return _terminalCard(event, title: _bashTitle(event), status: 'done');
+        return _bashEventCard(event);
       case 'edit':
         return EditCard(
           event: event,
@@ -91,7 +92,7 @@ class EventRenderer extends StatelessWidget {
       case 'custom':
         return _customCard(event);
       case 'system':
-        return _terminalCard(event, title: event.role, status: 'done');
+        return _systemEventCard(event);
       default:
         return _FallbackCard(event: event);
     }
@@ -170,14 +171,61 @@ class EventRenderer extends StatelessWidget {
   Widget _toolEventCard(HubItem event) {
     final toolName = event.metadata['toolName']?.toString();
     final toolCallId = event.metadata['toolCallId']?.toString();
-    if (toolName == 'subagent') return _subAgentToolCard(event);
-    return _terminalCard(
-      event,
+    final isError = event.metadata['isError'] == true;
+    return TuiEventCard(
+      event: event,
       title: toolName == null || toolName.isEmpty
           ? 'Tool result'
           : 'Tool result: $toolName',
-      status: event.metadata['isError'] == true ? 'error' : 'done',
-      summary: toolCallId == null || toolCallId.isEmpty ? '' : toolCallId,
+      status: isError ? 'error' : 'done',
+      icon: _toolIcon(toolName ?? ''),
+      summary: toolCallId,
+      sections: [
+        TuiEventSection(label: 'output', text: event.text, previewLines: 12),
+      ],
+      initiallyExpanded: true,
+    );
+  }
+
+  Widget _bashEventCard(HubItem event) {
+    final firstLine = event.text.split('\n').firstOrNull ?? '';
+    final output = event.text.split('\n').skip(1).join('\n');
+    final exitCode = event.metadata['exitCode'];
+    final cancelled = event.metadata['cancelled'] == true;
+    final status = cancelled
+        ? 'cancelled'
+        : (exitCode != null && exitCode.toString() != '0' ? 'error' : 'done');
+    return TuiEventCard(
+      event: event,
+      title: firstLine.startsWith(r'$ ') ? firstLine : 'Terminal',
+      status: status,
+      icon: Icons.terminal,
+      summary: exitCode == null ? null : 'exit $exitCode',
+      sections: [
+        TuiEventSection(
+          label: 'output',
+          text: output.isEmpty ? event.text : output,
+          previewLines: 12,
+        ),
+      ],
+      initiallyExpanded: true,
+    );
+  }
+
+  Widget _systemEventCard(HubItem event) {
+    final title =
+        event.role == 'compaction' || event.role == 'compactionSummary'
+        ? 'Compaction summary'
+        : event.role == 'branch_summary' || event.role == 'branchSummary'
+        ? 'Branch summary'
+        : event.role;
+    return TuiEventCard(
+      event: event,
+      title: title,
+      status: 'done',
+      icon: Icons.info_outline,
+      sections: [TuiEventSection(text: event.text, previewLines: 12)],
+      initiallyExpanded: true,
     );
   }
 
@@ -186,11 +234,16 @@ class EventRenderer extends StatelessWidget {
     final firstLine = event.text
         .split('\n')
         .firstWhere((line) => line.trim().isNotEmpty, orElse: () => '');
-    return _terminalCard(
-      event,
+    return TuiEventCard(
+      event: event,
       title: isError ? 'Subagent failed' : 'Subagent result',
       status: isError ? 'error' : 'done',
+      icon: Icons.account_tree,
       summary: firstLine,
+      sections: [
+        TuiEventSection(label: 'output', text: event.text, previewLines: 12),
+      ],
+      initiallyExpanded: true,
     );
   }
 
@@ -212,7 +265,15 @@ class EventRenderer extends StatelessWidget {
         (details['file'] != null || details['filePath'] != null)) {
       return EditCard(event: event);
     }
-    return _terminalCard(event, title: title, status: 'done');
+    return TuiEventCard(
+      event: event,
+      title: title,
+      status: 'done',
+      icon: Icons.extension,
+      summary: event.metadata['display']?.toString(),
+      sections: [TuiEventSection(text: event.text, previewLines: 12)],
+      initiallyExpanded: true,
+    );
   }
 
   bool _isSubAgentEvent(String normalized) {
@@ -222,6 +283,28 @@ class EventRenderer extends StatelessWidget {
         normalized.contains('delegate') ||
         normalized.contains('agent_task') ||
         normalized.contains('task_agent');
+  }
+
+  IconData _toolIcon(String tool) {
+    switch (tool) {
+      case 'read':
+      case 'read_file':
+      case 'ctx_read':
+        return Icons.description_outlined;
+      case 'bash':
+      case 'ctx_shell':
+      case 'ctx_execute':
+        return Icons.terminal;
+      case 'grep':
+      case 'ctx_grep':
+        return Icons.search;
+      case 'write':
+      case 'edit':
+      case 'write_file':
+        return Icons.code;
+      default:
+        return Icons.keyboard_command_key;
+    }
   }
 
   Widget _terminalCard(
