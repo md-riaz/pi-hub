@@ -732,7 +732,7 @@ async function handleCollaborationMessage(command: any): Promise<void> {
 						const content = Array.isArray(command.attachments) && command.attachments.length > 0
 							? command.attachments
 							: command.text;
-						await Promise.resolve(pi.sendUserMessage(content));
+						await Promise.resolve(pi.sendUserMessage(content, ctx.isIdle() ? undefined : { deliverAs: "followUp" }));
 						await sendEvent({
 							type: "input",
 							item: {

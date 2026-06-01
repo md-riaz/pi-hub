@@ -40,6 +40,13 @@ class _ArgumentSuggestion {
   });
 }
 
+class _FuzzyResult<T> {
+  final T item;
+  final double score;
+
+  const _FuzzyResult(this.item, this.score);
+}
+
 class _SlashSheetState extends State<SlashSheet> {
   final _controller = TextEditingController(text: '/');
   String _query = '/';
@@ -66,40 +73,111 @@ class _SlashSheetState extends State<SlashSheet> {
     Navigator.pop(context);
   }
 
+  _FuzzyResult<T>? _fuzzyMatch<T>(T item, String query, String text) {
+    final normalizedQuery = query.toLowerCase().trim();
+    final textLower = text.toLowerCase();
+    if (normalizedQuery.isEmpty) return _FuzzyResult(item, 0);
+    if (normalizedQuery.length > textLower.length) return null;
+
+    var queryIndex = 0;
+    var score = 0.0;
+    var lastMatchIndex = -1;
+    var consecutiveMatches = 0;
+    for (
+      var i = 0;
+      i < textLower.length && queryIndex < normalizedQuery.length;
+      i += 1
+    ) {
+      if (textLower[i] != normalizedQuery[queryIndex]) continue;
+      final isWordBoundary =
+          i == 0 || RegExp(r'[\s\-_./:]').hasMatch(textLower[i - 1]);
+      if (lastMatchIndex == i - 1) {
+        consecutiveMatches += 1;
+        score -= consecutiveMatches * 5;
+      } else {
+        consecutiveMatches = 0;
+        if (lastMatchIndex >= 0) score += (i - lastMatchIndex - 1) * 2;
+      }
+      if (isWordBoundary) score -= 10;
+      score += i * 0.1;
+      lastMatchIndex = i;
+      queryIndex += 1;
+    }
+    if (queryIndex < normalizedQuery.length) return null;
+    if (normalizedQuery == textLower) score -= 100;
+    return _FuzzyResult(item, score);
+  }
+
+  List<T> _fuzzyFilter<T>(
+    List<T> items,
+    String query,
+    String Function(T item) getText,
+  ) {
+    final tokens = query
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((token) => token.isNotEmpty)
+        .toList();
+    if (tokens.isEmpty) return items;
+    final results = <_FuzzyResult<T>>[];
+    for (final item in items) {
+      var totalScore = 0.0;
+      var allMatch = true;
+      final text = getText(item);
+      for (final token in tokens) {
+        final match = _fuzzyMatch(item, token, text);
+        if (match == null) {
+          allMatch = false;
+          break;
+        }
+        totalScore += match.score;
+      }
+      if (allMatch) results.add(_FuzzyResult(item, totalScore));
+    }
+    results.sort((a, b) => a.score.compareTo(b.score));
+    return results.map((result) => result.item).toList();
+  }
+
   List<HubSlashCommand> get _suggestions {
-    final raw = _query.trim().toLowerCase();
-    final token = raw.split(RegExp(r'\s+')).first;
-    final q = token.startsWith('/') ? token : '/$token';
+    final current = _controller.text.trimLeft();
+    final spaceIndex = current.indexOf(RegExp(r'\s'));
+    if (spaceIndex >= 0) return const [];
+    final prefix = current.startsWith('/') ? current.substring(1) : current;
     final commands = [...widget.commands]
-      ..sort((a, b) => a.invocation.compareTo(b.invocation));
-    if (q == '/' || q.isEmpty) return commands;
-    return commands.where((command) {
-      final invocation = command.invocation.toLowerCase();
-      final description = command.description?.toLowerCase() ?? '';
-      return invocation.startsWith(q) ||
-          invocation.contains(q) ||
-          description.contains(raw.replaceFirst('/', ''));
-    }).toList();
+      ..sort((a, b) => a.name.compareTo(b.name));
+    return _fuzzyFilter(commands, prefix, (command) => command.name);
+  }
+
+  HubSlashCommand? get _selectedCommand {
+    final current = _controller.text.trimLeft();
+    final parts = current.split(RegExp(r'\s+'));
+    final first = parts.first;
+    if (first.isEmpty || first == '/') return null;
+    final commandName = first.startsWith('/') ? first.substring(1) : first;
+    for (final command in widget.commands) {
+      if (command.name == commandName ||
+          command.invocation == '/$commandName') {
+        return command;
+      }
+    }
+    return null;
+  }
+
+  String get _argumentPrefix {
+    final current = _controller.text.trimLeft();
+    final spaceIndex = current.indexOf(RegExp(r'\s'));
+    if (spaceIndex < 0) return '';
+    return current.substring(spaceIndex + 1);
   }
 
   List<_ArgumentSuggestion> get _argumentSuggestions {
-    final current = _controller.text.trimLeft();
-    final parts = current.split(RegExp(r'\s+'));
-    if (parts.length < 2) return const [];
-    final commandToken = parts.first.startsWith('/')
-        ? parts.first
-        : '/${parts.first}';
-    final command = widget.commands
-        .where((item) => item.invocation == commandToken)
-        .firstOrNull;
+    final command = _selectedCommand;
     if (command == null || command.argumentCompletions.isEmpty) return const [];
-    final prefix = parts.skip(1).join(' ').toLowerCase();
-    return command.argumentCompletions
-        .where(
-          (item) =>
-              prefix.isEmpty ||
-              item.value.toLowerCase().startsWith(prefix) ||
-              item.value.toLowerCase().contains(prefix),
+    final prefix = _argumentPrefix;
+    return _fuzzyFilter(
+          command.argumentCompletions,
+          prefix,
+          (item) => '${item.value} ${item.label ?? ''}',
         )
         .map(
           (item) => _ArgumentSuggestion(
@@ -112,7 +190,12 @@ class _SlashSheetState extends State<SlashSheet> {
   }
 
   void _completeArgument(_ArgumentSuggestion suggestion) {
-    final value = '${suggestion.command.invocation} ${suggestion.value} ';
+    final current = _controller.text.trimLeft();
+    final spaceIndex = current.indexOf(RegExp(r'\s'));
+    final commandText = spaceIndex < 0
+        ? suggestion.command.invocation
+        : current.substring(0, spaceIndex);
+    final value = '$commandText ${suggestion.value}';
     _controller.value = TextEditingValue(
       text: value,
       selection: TextSelection.collapsed(offset: value.length),
@@ -120,10 +203,7 @@ class _SlashSheetState extends State<SlashSheet> {
   }
 
   void _complete(HubSlashCommand command) {
-    final current = _controller.text;
-    final parts = current.trimLeft().split(RegExp(r'\s+'));
-    final suffix = parts.length > 1 ? ' ${parts.skip(1).join(' ')}' : ' ';
-    final value = '${command.invocation}$suffix';
+    final value = '${command.invocation} ';
     _controller.value = TextEditingValue(
       text: value,
       selection: TextSelection.collapsed(offset: value.length),
