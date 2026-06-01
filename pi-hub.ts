@@ -523,6 +523,64 @@ function networkHint(config: PiHubConfig): string {
 	].join("\n");
 }
 
+function firewallHint(config: PiHubConfig): string {
+	const port = Number(config.port);
+	if (process.platform === "win32") {
+		return [
+			"Windows Firewall (run PowerShell as Administrator):",
+			`New-NetFirewallRule -DisplayName "Pi Hub ${port}" -Direction Inbound -Action Allow -Protocol TCP -LocalPort ${port}`,
+			"",
+			"Remove rule:",
+			`Remove-NetFirewallRule -DisplayName "Pi Hub ${port}"`,
+		].join("\n");
+	}
+	if (process.platform === "darwin") {
+		return [
+			"macOS Firewall:",
+			"System Settings → Network → Firewall → Options…",
+			`Allow incoming connections for: ${process.execPath}`,
+			"",
+			"Manual pf example:",
+			`pass in proto tcp from any to any port ${port}`,
+		].join("\n");
+	}
+	return [
+		"Linux firewall examples (pick one):",
+		`sudo ufw allow ${port}/tcp comment 'Pi Hub'`,
+		`sudo firewall-cmd --add-port=${port}/tcp --permanent && sudo firewall-cmd --reload`,
+		`sudo iptables -A INPUT -p tcp --dport ${port} -j ACCEPT`,
+		"",
+		"Remove ufw rule:",
+		`sudo ufw delete allow ${port}/tcp`,
+	].join("\n");
+}
+
+function hubStatusText(config: PiHubConfig, connected: boolean): string {
+	const pid = readPid();
+	const pidRunning = pid ? isProcessRunning(pid) : false;
+	return [
+		"═══ Pi Hub Status ═══",
+		`Session connected: ${connected ? "yes" : "no"}`,
+		`Server PID: ${pid ?? "none"}`,
+		`Server process: ${pidRunning ? "running" : "not running"}`,
+		`Auto-start: ${config.autoStartServer ? "enabled" : "disabled"}`,
+		`Manual stop: ${isServerManuallyStopped() ? "yes — run /hub start to clear" : "no"}`,
+		`Bind: ${config.host}:${config.port}`,
+	].join("\n");
+}
+
+function hubInfoText(config: PiHubConfig): string {
+	return [
+		"═══ Pi Hub Info ═══",
+		`Config: ${configPath()}`,
+		`PID file: ${pidPath()}`,
+		"",
+		networkHint(config),
+		"",
+		"Firewall help: /hub firewall",
+	].join("\n");
+}
+
 export default function piHubExtension(pi: ExtensionAPI) {
 	const config = loadConfig();
 	let ctxRef: ExtensionContext | null = null;
@@ -676,18 +734,14 @@ export default function piHubExtension(pi: ExtensionAPI) {
 			const pid = readPid();
 			await disconnectSession();
 			if (pid && isProcessRunning(pid)) process.kill(pid);
-		} else if (sub === "info" || sub === "status" || !sub) {
-			const pid = readPid();
-			notifyFallback([
-				"═══ Pi Hub ═══",
-				`Status: ${serverOk ? "connected" : "not connected"}`,
-				`PID: ${pid ?? "unknown"}`,
-				`Config: ${configPath()}`,
-				"",
-				networkHint(config),
-			].join("\n"), serverOk ? "info" : "warning");
+		} else if (sub === "info" || !sub) {
+			notifyFallback(hubInfoText(config), "info");
+		} else if (sub === "status") {
+			notifyFallback(hubStatusText(config, serverOk), serverOk ? "info" : "warning");
+		} else if (sub === "firewall") {
+			notifyFallback(firewallHint(config), "info");
 		} else {
-			throw new Error("Unknown /hub command. Use: /hub info, /hub start, /hub stop, /hub server stop");
+			throw new Error("Unknown /hub command. Use: /hub info, /hub status, /hub firewall, /hub start, /hub stop, /hub server stop");
 		}
 	} else if (name === "compact") {
 		ctx.compact();
@@ -1020,9 +1074,9 @@ async function handleCollaborationMessage(command: any): Promise<void> {
 	}
 
 	pi.registerCommand("hub", {
-		description: "Pi Hub: /hub [info|start|stop|server stop]",
+		description: "Pi Hub: /hub [info|status|firewall|start|stop|server stop]",
 		getArgumentCompletions(prefix: string) {
-			return ["status", "info", "start", "stop", "server stop"].filter((item) => item.startsWith(prefix)).map((value) => ({ value, label: value }));
+			return ["info", "status", "firewall", "start", "stop", "server stop"].filter((item) => item.startsWith(prefix)).map((value) => ({ value, label: value }));
 		},
 		async handler(args, ctx) {
 			const sub = args.trim().toLowerCase();
@@ -1065,19 +1119,19 @@ async function handleCollaborationMessage(command: any): Promise<void> {
 				}
 				return;
 			}
-			if (sub === "info" || sub === "status" || !sub) {
-				const pid = readPid();
-				ctx.ui.notify([
-					"═══ Pi Hub ═══",
-					`Status: ${serverOk ? "connected" : "not connected"}`,
-					`PID: ${pid ?? "unknown"}`,
-					`Config: ${configPath()}`,
-					"",
-					networkHint(config),
-				].join("\n"), serverOk ? "info" : "warning");
+			if (sub === "info" || !sub) {
+				ctx.ui.notify(hubInfoText(config), "info");
 				return;
 			}
-			ctx.ui.notify("Unknown /hub command. Use: /hub info, /hub start, /hub stop, /hub server stop", "warning");
+			if (sub === "status") {
+				ctx.ui.notify(hubStatusText(config, serverOk), serverOk ? "info" : "warning");
+				return;
+			}
+			if (sub === "firewall") {
+				ctx.ui.notify(firewallHint(config), "info");
+				return;
+			}
+			ctx.ui.notify("Unknown /hub command. Use: /hub info, /hub status, /hub firewall, /hub start, /hub stop, /hub server stop", "warning");
 		},
 	});
 }
