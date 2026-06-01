@@ -53,7 +53,7 @@ Fields:
     "host": "0.0.0.0",
     "port": 17878,
     "time": "2026-02-03T04:05:06.000Z",
-    "version": "2.0.35",
+    "version": "2.0.36",
     "schemaVersion": 2,
     "capabilities": {
       "health": true,

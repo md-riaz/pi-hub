@@ -13,11 +13,11 @@ const HUB_DIR = path.join(PI_HOME, "pi-hub");
 const CONFIG_PATH = path.join(HUB_DIR, "config.json");
 const PID_PATH = path.join(HUB_DIR, "server.pid");
 
-const SERVER_VERSION = "2.0.35";
+const SERVER_VERSION = "2.0.36";
 
 const DEFAULT_CONFIG = {
   enabled: true,
-  host: "127.0.0.1",
+  host: "0.0.0.0",
   port: 17878,
   token: "",
   historyLimit: 500,

@@ -1,6 +1,6 @@
 # Pi Hub Android App
 
-Flutter Android client for Pi Hub mission control (v2.0.35+35).
+Flutter Android client for Pi Hub mission control (v2.0.36+36).
 
 ## Run from source
 
@@ -52,7 +52,7 @@ Token file on the hub host:
 ~/.pi/agent/pi-hub/config.json
 ```
 
-For physical phone access, set hub `host` to `0.0.0.0` only on trusted LAN/VPN/Tailscale paths and allow inbound TCP `17878` through the host firewall.
+For physical phone access, the hub binds `0.0.0.0` by default. Keep it on trusted LAN/VPN/Tailscale paths and allow inbound TCP `17878` through the host firewall if needed.
 
 ## Use
 

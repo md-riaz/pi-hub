@@ -1,6 +1,6 @@
 # Pi Hub
 
-**Version: 2.0.35+35**
+**Version: 2.0.36+36**
 
 Pi Hub is a local-first mission-control dashboard for Pi Coding Agent sessions. It combines a Pi extension, a small HTTP/SSE hub server, and a Flutter Android app so you can monitor and control multiple running agents from a phone over any network that can reach the hub host.
 
@@ -138,7 +138,7 @@ Common URLs (the app adds `http://` automatically if you enter only `host:port`)
 - Phone on same WiFi/LAN: `http://<hub-host-lan-ip>:17878`
 - Phone over VPN or other network: use any IP that reaches the hub host
 
-Run `/hub info` to see detected LAN IPs. The server binds `127.0.0.1` by default. Set `host` to `0.0.0.0` only when the phone reaches the hub over a trusted LAN/VPN/Tailscale path, then allow inbound TCP `17878` through the hub host firewall if needed.
+Run `/hub info` to see detected LAN IPs. The server binds `0.0.0.0` by default for phone-first LAN/VPN access. Keep the hub on trusted networks and allow inbound TCP `17878` through the hub host firewall only when needed.
 
 ## Daily usage
 
@@ -164,7 +164,7 @@ Example:
 ```json
 {
   "enabled": true,
-  "host": "127.0.0.1",
+  "host": "0.0.0.0",
   "port": 17878,
   "token": "generated-token",
   "historyLimit": 500,
@@ -182,7 +182,7 @@ Example:
 Key fields:
 
 - `enabled`: enables the extension bridge.
-- `host`: bind address. Defaults to `127.0.0.1`; use `0.0.0.0` only for trusted LAN/VPN/Tailscale access.
+- `host`: bind address. Defaults to `0.0.0.0` so a phone can reach the hub on trusted LAN/VPN/Tailscale paths. Use `127.0.0.1` for local-only access.
 - `port`: hub server port.
 - `token`: bearer token required by the app and API.
 - `historyLimit`: maximum in-memory transcript items per session.
@@ -267,7 +267,7 @@ Protect `~/.pi/agent/pi-hub/config.json`; it contains the bearer token. Bearer-t
 ## Troubleshooting
 
 - **No sessions visible**: restart Pi sessions after installing the extension, then run `/hub start`.
-- **Phone cannot connect**: run `/hub info` to see LAN IPs, set `host: "0.0.0.0"` for trusted LAN/VPN access, and check firewall rules for TCP `17878`.
+- **Phone cannot connect**: run `/hub info` to see LAN IPs and check firewall rules for TCP `17878`.
 - **Unauthorized**: copy the current token from `~/.pi/agent/pi-hub/config.json`.
 - **Stale server state**: stop the old Node process or remove the stale `~/.pi/agent/pi-hub/server.pid`, then run `/hub start`.
 - **Emulator cannot connect**: use `http://10.0.2.2:17878`, not `localhost`.

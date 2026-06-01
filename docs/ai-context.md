@@ -18,9 +18,9 @@ The product is for controlling many Pi agents from a phone. It is not a hosted S
 
 Reason: user wants live mission control, not a transcript database. Old/stale agents should disappear. Persisting session history would reintroduce stale clutter.
 
-### `127.0.0.1:17878` default HTTP server
+### `0.0.0.0:17878` default HTTP server
 
-Reason: private-by-default is safer. Phone access over LAN/VPN/Tailscale requires opting into `host: "0.0.0.0"` and opening the firewall. HTTP is simpler for local/trusted networks. Android cleartext is enabled for hub connections; use LAN/VPN/Tailscale or an HTTPS reverse proxy for routed access.
+Reason: Pi Hub is phone-first. Binding all interfaces works on trusted LAN/VPN/Tailscale without extra config, while bearer auth is still required, browser CORS is disabled by default, and router/firewall rules still control internet exposure. Use `host: "127.0.0.1"` for local-only access. HTTP is simpler for local/trusted networks. Android cleartext is enabled for hub connections; use LAN/VPN/Tailscale or an HTTPS reverse proxy for routed access.
 
 ### Bearer token auth
 
