@@ -19,14 +19,18 @@ class _TerminalCardState extends State<TerminalCard> {
     final title = widget.event.metadata['title'] ?? widget.event.kind;
     final summary = widget.event.metadata['summary'] ?? '';
     final lines = _parseLines();
-    final visible = _expanded ? lines : lines.length > 4 ? lines.sublist(lines.length - 4) : lines;
+    final visible = _expanded
+        ? lines
+        : lines.length > 4
+        ? lines.sublist(lines.length - 4)
+        : lines;
     final accentColor = isDone ? HubTheme.green : HubTheme.cyan;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
         color: const Color(0xFF05070A),
-        border: Border.all(color: accentColor.withOpacity(0.27)),
+        border: Border.all(color: accentColor.withValues(alpha: 0.27)),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
@@ -38,16 +42,25 @@ class _TerminalCardState extends State<TerminalCard> {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
                 color: HubTheme.card,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(16),
+                ),
               ),
               child: Row(
                 children: [
                   Icon(Icons.terminal, size: 14, color: accentColor),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(title, style: HubTheme.mono.copyWith(fontSize: 11), overflow: TextOverflow.ellipsis),
+                    child: Text(
+                      title,
+                      style: HubTheme.mono.copyWith(fontSize: 11),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                  Text(_expanded ? 'hide' : 'expand', style: HubTheme.monoSmall.copyWith(color: accentColor)),
+                  Text(
+                    _expanded ? 'hide' : 'expand',
+                    style: HubTheme.monoSmall.copyWith(color: accentColor),
+                  ),
                 ],
               ),
             ),
@@ -59,29 +72,41 @@ class _TerminalCardState extends State<TerminalCard> {
               decoration: BoxDecoration(
                 border: Border(bottom: BorderSide(color: HubTheme.softLine)),
               ),
-              child: Text(summary, style: TextStyle(color: accentColor, fontSize: 12, fontWeight: FontWeight.w600)),
+              child: Text(
+                summary,
+                style: TextStyle(
+                  color: accentColor,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
           Padding(
             padding: const EdgeInsets.all(12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: visible.map((line) => Padding(
-                padding: const EdgeInsets.only(bottom: 2),
-                child: Text(
-                  line,
-                  style: TextStyle(
-                    color: line.contains('PASS') || line.contains('passed')
-                        ? HubTheme.green
-                        : line.contains('running')
-                            ? HubTheme.cyan
-                            : HubTheme.text2,
-                    fontSize: 11,
-                    fontFamily: 'monospace',
-                    height: 1.4,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              )).toList(),
+              children: visible
+                  .map(
+                    (line) => Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: Text(
+                        line,
+                        style: TextStyle(
+                          color:
+                              line.contains('PASS') || line.contains('passed')
+                              ? HubTheme.green
+                              : line.contains('running')
+                              ? HubTheme.cyan
+                              : HubTheme.text2,
+                          fontSize: 11,
+                          fontFamily: 'monospace',
+                          height: 1.4,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  )
+                  .toList(),
             ),
           ),
         ],

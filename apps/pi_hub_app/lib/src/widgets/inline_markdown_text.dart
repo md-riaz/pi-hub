@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 
 class InlineMarkdownText extends StatelessWidget {
   final String text;
@@ -18,7 +19,59 @@ class InlineMarkdownText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (_hasBlockMarkdown(text)) {
+      return MarkdownBody(
+        data: text,
+        selectable: true,
+        styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+          p: style,
+          code: style.copyWith(
+            color: codeForeground,
+            fontFamily: 'monospace',
+            fontSize: (style.fontSize ?? 14) - 1,
+          ),
+          codeblockDecoration: BoxDecoration(
+            color: codeBackground,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: codeForeground.withValues(alpha: 0.18)),
+          ),
+          blockquoteDecoration: BoxDecoration(
+            border: Border(
+              left: BorderSide(
+                color: codeForeground.withValues(alpha: 0.5),
+                width: 3,
+              ),
+            ),
+          ),
+          h1: style.copyWith(
+            fontSize: (style.fontSize ?? 14) + 6,
+            fontWeight: FontWeight.w700,
+          ),
+          h2: style.copyWith(
+            fontSize: (style.fontSize ?? 14) + 4,
+            fontWeight: FontWeight.w700,
+          ),
+          h3: style.copyWith(
+            fontSize: (style.fontSize ?? 14) + 2,
+            fontWeight: FontWeight.w700,
+          ),
+          listBullet: style,
+          a: style.copyWith(
+            color: codeForeground,
+            decoration: TextDecoration.underline,
+          ),
+        ),
+      );
+    }
     return Text.rich(TextSpan(children: _spans(context)), textAlign: textAlign);
+  }
+
+  bool _hasBlockMarkdown(String value) {
+    return value.contains('```') ||
+        RegExp(r'(^|\n)#{1,6}\s+').hasMatch(value) ||
+        RegExp(r'(^|\n)\s*[-*+]\s+').hasMatch(value) ||
+        RegExp(r'(^|\n)\s*\d+\.\s+').hasMatch(value) ||
+        RegExp(r'(^|\n)>\s+').hasMatch(value);
   }
 
   List<InlineSpan> _spans(BuildContext context) {
@@ -42,7 +95,7 @@ class InlineMarkdownText extends StatelessWidget {
             decoration: BoxDecoration(
               color: codeBackground,
               borderRadius: BorderRadius.circular(5),
-              border: Border.all(color: codeForeground.withOpacity(0.18)),
+              border: Border.all(color: codeForeground.withValues(alpha: 0.18)),
             ),
             child: Text(
               code,

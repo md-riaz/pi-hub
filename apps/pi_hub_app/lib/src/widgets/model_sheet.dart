@@ -78,11 +78,11 @@ class ModelSheet extends StatelessWidget {
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
                       color: selectedModel
-                          ? HubTheme.blue.withOpacity(0.1)
+                          ? HubTheme.blue.withValues(alpha: 0.1)
                           : HubTheme.card,
                       border: Border.all(
                         color: selectedModel
-                            ? HubTheme.blue.withOpacity(0.4)
+                            ? HubTheme.blue.withValues(alpha: 0.4)
                             : HubTheme.softLine,
                       ),
                       borderRadius: BorderRadius.circular(16),

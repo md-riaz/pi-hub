@@ -34,13 +34,31 @@ class HubTheme {
   static const stateLive = green;
 
   // Text styles
-  static const headingL = TextStyle(fontSize: 24, fontWeight: FontWeight.w600, color: text, letterSpacing: -0.5);
-  static const headingM = TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: text);
+  static const headingL = TextStyle(
+    fontSize: 24,
+    fontWeight: FontWeight.w600,
+    color: text,
+    letterSpacing: -0.5,
+  );
+  static const headingM = TextStyle(
+    fontSize: 16,
+    fontWeight: FontWeight.w600,
+    color: text,
+  );
   static const body = TextStyle(fontSize: 14, color: text, height: 1.5);
   static const bodySmall = TextStyle(fontSize: 12, color: text2);
   static const caption = TextStyle(fontSize: 11, color: text3);
-  static const mono = TextStyle(fontSize: 11, color: text2, fontFamily: 'monospace', fontWeight: FontWeight.w500);
-  static const monoSmall = TextStyle(fontSize: 10, color: text3, fontFamily: 'monospace');
+  static const mono = TextStyle(
+    fontSize: 11,
+    color: text2,
+    fontFamily: 'monospace',
+    fontWeight: FontWeight.w500,
+  );
+  static const monoSmall = TextStyle(
+    fontSize: 10,
+    color: text3,
+    fontFamily: 'monospace',
+  );
 
   // Border radius
   static const radiusL = BorderRadius.all(Radius.circular(24));

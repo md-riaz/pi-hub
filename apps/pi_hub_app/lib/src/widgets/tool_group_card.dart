@@ -29,7 +29,7 @@ class _ToolGroupCardState extends State<ToolGroupCard> {
         color: HubTheme.card,
         border: Border.all(
           color: isRunning
-              ? HubTheme.cyan.withOpacity(0.33)
+              ? HubTheme.cyan.withValues(alpha: 0.33)
               : HubTheme.softLine,
         ),
         borderRadius: BorderRadius.circular(16),
@@ -46,8 +46,8 @@ class _ToolGroupCardState extends State<ToolGroupCard> {
                   height: 28,
                   decoration: BoxDecoration(
                     color: isRunning
-                        ? HubTheme.cyan.withOpacity(0.1)
-                        : HubTheme.green.withOpacity(0.1),
+                        ? HubTheme.cyan.withValues(alpha: 0.1)
+                        : HubTheme.green.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: isRunning
@@ -157,7 +157,7 @@ class _ToolPreviewRow extends StatelessWidget {
       decoration: BoxDecoration(
         color: HubTheme.panel,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withOpacity(0.18)),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

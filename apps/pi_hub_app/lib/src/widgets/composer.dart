@@ -137,7 +137,7 @@ class _ComposerState extends State<Composer> {
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: widget.attachments.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 6),
+                  separatorBuilder: (_, index) => const SizedBox(width: 6),
                   itemBuilder: (context, index) {
                     final attachment = widget.attachments[index];
                     final isImage = attachment.mimeType.startsWith('image/');
@@ -300,11 +300,7 @@ class _ActionBtn extends StatelessWidget {
   final IconData icon;
   final VoidCallback? onTap;
   final String? tooltip;
-  const _ActionBtn({
-    required this.icon,
-    this.onTap,
-    this.tooltip,
-  });
+  const _ActionBtn({required this.icon, this.onTap, this.tooltip});
 
   @override
   Widget build(BuildContext context) {

@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../hub_models.dart';
 import '../theme/hub_theme.dart';
 
@@ -68,7 +71,7 @@ class _TuiEventCardState extends State<TuiEventCard> {
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
         color: const Color(0xFF05070A),
-        border: Border.all(color: accent.withOpacity(0.28)),
+        border: Border.all(color: accent.withValues(alpha: 0.28)),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
@@ -120,6 +123,20 @@ class _TuiEventCardState extends State<TuiEventCard> {
                     style: HubTheme.monoSmall.copyWith(color: accent),
                   ),
                   const SizedBox(width: 8),
+                  IconButton(
+                    tooltip: 'Copy raw event',
+                    icon: const Icon(
+                      Icons.copy,
+                      size: 14,
+                      color: HubTheme.text3,
+                    ),
+                    onPressed: _copyRawEvent,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 28,
+                      minHeight: 28,
+                    ),
+                  ),
                   Text(
                     _expanded ? 'hide' : 'expand',
                     style: HubTheme.monoSmall,
@@ -156,6 +173,41 @@ class _TuiEventCardState extends State<TuiEventCard> {
                     ),
                     const SizedBox(height: 8),
                   ],
+                if (_expanded && _hasRawMetadata) ...[
+                  const SizedBox(height: 4),
+                  ExpansionTile(
+                    tilePadding: EdgeInsets.zero,
+                    childrenPadding: EdgeInsets.zero,
+                    iconColor: HubTheme.text3,
+                    collapsedIconColor: HubTheme.text3,
+                    title: Text(
+                      'raw event',
+                      style: HubTheme.monoSmall.copyWith(
+                        color: HubTheme.text3,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    children: [
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: HubTheme.bg,
+                          border: Border.all(color: HubTheme.softLine),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: SelectableText(
+                          _rawEventJson(),
+                          style: HubTheme.mono.copyWith(
+                            color: HubTheme.text2,
+                            fontSize: 10.5,
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -164,11 +216,37 @@ class _TuiEventCardState extends State<TuiEventCard> {
     );
   }
 
+  bool get _hasRawMetadata => widget.event.metadata.isNotEmpty;
+
+  String _rawEventJson() {
+    const encoder = JsonEncoder.withIndent('  ');
+    return encoder.convert({
+      'id': widget.event.id,
+      'kind': widget.event.kind,
+      'role': widget.event.role,
+      'timestamp': widget.event.timestamp,
+      'text': widget.event.text,
+      'metadata': widget.event.metadata,
+    });
+  }
+
+  Future<void> _copyRawEvent() async {
+    await Clipboard.setData(ClipboardData(text: _rawEventJson()));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Raw event copied'),
+        duration: Duration(seconds: 1),
+      ),
+    );
+  }
+
   Color _statusColor(String status) {
     final lower = status.toLowerCase();
     if (lower.contains('error') || lower.contains('fail')) return HubTheme.red;
-    if (lower.contains('running') || lower.contains('pending'))
+    if (lower.contains('running') || lower.contains('pending')) {
       return HubTheme.cyan;
+    }
     if (lower.contains('cancel')) return HubTheme.yellow;
     return HubTheme.green;
   }

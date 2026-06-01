@@ -39,7 +39,7 @@ class UserBubble extends StatelessWidget {
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.15),
+                color: Colors.black.withValues(alpha: 0.15),
                 blurRadius: 8,
                 offset: const Offset(0, 2),
               ),
@@ -56,7 +56,7 @@ class UserBubble extends StatelessWidget {
                   fontSize: 14,
                   height: 1.5,
                 ),
-                codeBackground: const Color(0xFF06111F).withOpacity(0.12),
+                codeBackground: const Color(0xFF06111F).withValues(alpha: 0.12),
                 codeForeground: const Color(0xFF06111F),
               ),
               if (time != null || status != null) ...[
@@ -64,12 +64,9 @@ class UserBubble extends StatelessWidget {
                 Align(
                   alignment: Alignment.centerRight,
                   child: Text(
-                    [
-                      if (status != null) status!,
-                      if (time != null) time!,
-                    ].join(' · '),
+                    [?status, ?time].join(' · '),
                     style: TextStyle(
-                      color: const Color(0xFF06111F).withOpacity(0.6),
+                      color: const Color(0xFF06111F).withValues(alpha: 0.6),
                       fontSize: 10,
                     ),
                   ),

@@ -369,8 +369,9 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
       for (final model in session.availableModels) {
         if (model.id.isNotEmpty && seen.add(model.id)) out.add(model.id);
       }
-      if (session.model.isNotEmpty && seen.add(session.model))
+      if (session.model.isNotEmpty && seen.add(session.model)) {
         out.add(session.model);
+      }
     }
     return out;
   }

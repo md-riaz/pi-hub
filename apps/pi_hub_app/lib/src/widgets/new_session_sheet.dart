@@ -101,7 +101,7 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
                 child: ListView.separated(
                   shrinkWrap: true,
                   itemCount: _models.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  separatorBuilder: (_, index) => const SizedBox(height: 8),
                   itemBuilder: (context, index) {
                     final model = _models[index];
                     return GestureDetector(
@@ -110,11 +110,11 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
                           color: model == _selectedModel
-                              ? HubTheme.green.withOpacity(0.1)
+                              ? HubTheme.green.withValues(alpha: 0.1)
                               : HubTheme.card,
                           border: Border.all(
                             color: model == _selectedModel
-                                ? HubTheme.green.withOpacity(0.4)
+                                ? HubTheme.green.withValues(alpha: 0.4)
                                 : HubTheme.softLine,
                           ),
                           borderRadius: BorderRadius.circular(16),
@@ -246,8 +246,9 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
                           client: widget.client!,
                           initial: _pathController.text,
                         );
-                        if (path != null)
+                        if (path != null) {
                           setState(() => _pathController.text = path);
+                        }
                       }
                     : null,
                 child: Container(

@@ -13,7 +13,6 @@ class EventRenderer extends StatelessWidget {
   final bool isStreaming;
   final ValueChanged<EditEvent>? onViewDiff;
   final ValueChanged<String>? onQuickReply;
-  final HubItem? pairedToolResult;
   final List<HubItem> pairedToolResults;
   final ValueChanged<HubItem>? onPendingCommandAction;
 
@@ -23,7 +22,6 @@ class EventRenderer extends StatelessWidget {
     this.isStreaming = false,
     this.onViewDiff,
     this.onQuickReply,
-    this.pairedToolResult,
     this.pairedToolResults = const [],
     this.onPendingCommandAction,
   });
@@ -154,14 +152,11 @@ class EventRenderer extends StatelessWidget {
   }
 
   Map<String, HubItem> _pairedResultsById() {
-    final results = [
-      ...pairedToolResults,
-      if (pairedToolResult != null) pairedToolResult!,
-    ];
+    final results = [...pairedToolResults];
     final out = <String, HubItem>{};
     for (final item in results) {
       final id = item.metadata['toolCallId']?.toString();
-      if (id != null && id.isNotEmpty) out[id] = item;
+      if (id?.isNotEmpty == true) out[id!] = item;
       final name = item.metadata['toolName']?.toString();
       if (name != null && name.isNotEmpty) out.putIfAbsent(name, () => item);
     }
@@ -225,24 +220,6 @@ class EventRenderer extends StatelessWidget {
       status: 'done',
       icon: Icons.info_outline,
       sections: [TuiEventSection(text: event.text, previewLines: 12)],
-      initiallyExpanded: true,
-    );
-  }
-
-  Widget _subAgentToolCard(HubItem event) {
-    final isError = event.metadata['isError'] == true;
-    final firstLine = event.text
-        .split('\n')
-        .firstWhere((line) => line.trim().isNotEmpty, orElse: () => '');
-    return TuiEventCard(
-      event: event,
-      title: isError ? 'Subagent failed' : 'Subagent result',
-      status: isError ? 'error' : 'done',
-      icon: Icons.account_tree,
-      summary: firstLine,
-      sections: [
-        TuiEventSection(label: 'output', text: event.text, previewLines: 12),
-      ],
       initiallyExpanded: true,
     );
   }
@@ -371,12 +348,6 @@ class EventRenderer extends StatelessWidget {
     if (arguments == null) return toolName;
     final args = arguments.toString();
     return args.isEmpty ? toolName : '$toolName $args';
-  }
-
-  String _bashTitle(HubItem event) {
-    final firstLine = event.text.split('\n').firstOrNull ?? '';
-    if (firstLine.startsWith(r'$ ')) return firstLine;
-    return 'Terminal';
   }
 
   String _formatTime(int timestamp) {

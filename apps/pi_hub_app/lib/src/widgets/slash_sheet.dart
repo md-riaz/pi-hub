@@ -286,7 +286,7 @@ class _SlashSheetState extends State<SlashSheet> {
                 child: ListView.separated(
                   shrinkWrap: true,
                   itemCount: argumentSuggestions.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  separatorBuilder: (_, index) => const SizedBox(height: 8),
                   itemBuilder: (context, index) {
                     final suggestion = argumentSuggestions[index];
                     return GestureDetector(
@@ -349,7 +349,7 @@ class _SlashSheetState extends State<SlashSheet> {
                 child: ListView.separated(
                   shrinkWrap: true,
                   itemCount: suggestions.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  separatorBuilder: (_, index) => const SizedBox(height: 8),
                   itemBuilder: (context, index) {
                     final command = suggestions[index];
                     return GestureDetector(

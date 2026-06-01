@@ -157,8 +157,10 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: HubTheme.red.withOpacity(0.1),
-                    border: Border.all(color: HubTheme.red.withOpacity(0.3)),
+                    color: HubTheme.red.withValues(alpha: 0.1),
+                    border: Border.all(
+                      color: HubTheme.red.withValues(alpha: 0.3),
+                    ),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(

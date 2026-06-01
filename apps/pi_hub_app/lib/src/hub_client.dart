@@ -177,10 +177,18 @@ class HubClient {
     }
 
     HubSnapshot? snapshot;
+    int? lastSeq;
     await for (final line
         in response.transform(utf8.decoder).transform(const LineSplitter())) {
       if (!line.startsWith('data: ')) continue;
       final data = jsonDecode(line.substring(6)) as Map<String, dynamic>;
+      final seq = _intValue(data['seq']);
+      final missedEvents = seq != null && lastSeq != null && seq > lastSeq + 1;
+      if (missedEvents) {
+        snapshot = await fetchSnapshot();
+        yield snapshot;
+      }
+      if (seq != null) lastSeq = seq;
       if (data['type'] == 'snapshot') {
         snapshot = HubSnapshot.fromJson(
           data['snapshot'] as Map<String, dynamic>,

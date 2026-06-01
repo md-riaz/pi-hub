@@ -346,6 +346,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   Future<void> _showPendingCommandActions(HubItem item) async {
     final commandId = item.metadata['commandId']?.toString();
     if (commandId == null || commandId.isEmpty) return;
+    if (!mounted) return;
     await showModalBottomSheet(
       context: context,
       backgroundColor: HubTheme.panel,
@@ -405,7 +406,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                   try {
                     await widget.client.updateCommandText(commandId, updated);
                   } catch (error) {
-                    if (!mounted) return;
+                    if (!context.mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text('Edit failed: $error')),
                     );
@@ -423,7 +424,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                   try {
                     await widget.client.cancelCommand(commandId);
                   } catch (error) {
-                    if (!mounted) return;
+                    if (!context.mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text('Cancel failed: $error')),
                     );
@@ -454,6 +455,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       await _showPendingCommandActions(pending.first);
       return;
     }
+    if (!mounted) return;
     await showModalBottomSheet(
       context: context,
       backgroundColor: HubTheme.panel,
@@ -477,7 +479,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                 child: ListView.separated(
                   shrinkWrap: true,
                   itemCount: pending.length,
-                  separatorBuilder: (_, __) =>
+                  separatorBuilder: (_, index) =>
                       const Divider(color: HubTheme.softLine),
                   itemBuilder: (context, index) {
                     final item = pending[index];
@@ -669,7 +671,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                             return EventRenderer(
                               event: item.event,
                               isStreaming: isStreaming,
-                              pairedToolResult: item.pairedToolResult,
                               pairedToolResults: item.pairedToolResults,
                               onViewDiff: (edit) => DiffDrawer.show(
                                 context,
@@ -791,8 +792,10 @@ class _ConnectionStatusBar extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        border: Border(bottom: BorderSide(color: color.withOpacity(0.35))),
+        color: color.withValues(alpha: 0.12),
+        border: Border(
+          bottom: BorderSide(color: color.withValues(alpha: 0.35)),
+        ),
       ),
       child: Row(
         children: [
@@ -834,14 +837,9 @@ class _ConnectionStatusBar extends StatelessWidget {
 }
 
 class _TimelineItem {
-  const _TimelineItem(
-    this.event, {
-    this.pairedToolResult,
-    this.pairedToolResults = const [],
-  });
+  const _TimelineItem(this.event, {this.pairedToolResults = const []});
 
   final HubItem event;
-  final HubItem? pairedToolResult;
   final List<HubItem> pairedToolResults;
 }
 

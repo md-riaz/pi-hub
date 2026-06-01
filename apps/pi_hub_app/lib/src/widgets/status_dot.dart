@@ -20,7 +20,13 @@ class StatusDot extends StatelessWidget {
             color: cfg.color,
             shape: BoxShape.circle,
             boxShadow: state != 'idle'
-                ? [BoxShadow(color: cfg.color.withOpacity(0.6), blurRadius: 8, spreadRadius: 1)]
+                ? [
+                    BoxShadow(
+                      color: cfg.color.withValues(alpha: 0.6),
+                      blurRadius: 8,
+                      spreadRadius: 1,
+                    ),
+                  ]
                 : null,
           ),
         ),
@@ -28,7 +34,11 @@ class StatusDot extends StatelessWidget {
           const SizedBox(width: 6),
           Text(
             label ?? cfg.label!,
-            style: HubTheme.caption.copyWith(color: cfg.color, fontWeight: FontWeight.w500, fontSize: 11),
+            style: HubTheme.caption.copyWith(
+              color: cfg.color,
+              fontWeight: FontWeight.w500,
+              fontSize: 11,
+            ),
           ),
         ],
       ],
