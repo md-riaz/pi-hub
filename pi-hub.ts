@@ -41,7 +41,7 @@ interface PendingMobileInput {
 }
 
 const HUB_PROTOCOL_VERSION = 2;
-const HUB_CLIENT_VERSION = "2.0.36";
+const HUB_CLIENT_VERSION = "2.0.42";
 const HUB_CLIENT_NAME = "pi-hub-extension";
 
 const DEFAULT_CONFIG: PiHubConfig = {
@@ -559,14 +559,27 @@ function firewallHint(config: PiHubConfig): string {
 	].join("\n");
 }
 
-function hubStatusText(config: PiHubConfig, connected: boolean): string {
+async function hubStatusText(config: PiHubConfig, connected: boolean): Promise<string> {
 	const pid = readPid();
 	const pidRunning = pid ? isProcessRunning(pid) : false;
+	let health: any = null;
+	let healthError = "";
+	try {
+		health = await getJson(config, "/api/health");
+	} catch (error) {
+		healthError = error instanceof Error ? error.message : String(error);
+	}
+	const healthPid = Number(health?.pid) || null;
+	const serverReachable = Boolean(health?.ok);
+	const processRunning = pidRunning || serverReachable;
+	const effectivePid = pid ?? healthPid;
 	return [
 		"═══ Pi Hub Status ═══",
-		`Session connected: ${connected ? "yes" : "no"}`,
-		`Server PID: ${pid ?? "none"}`,
-		`Server process: ${pidRunning ? "running" : "not running"}`,
+		`Session connected: ${connected && serverReachable ? "yes" : "no"}`,
+		`Server HTTP: ${serverReachable ? "reachable" : "unreachable"}`,
+		`Server PID: ${effectivePid ?? "none"}${pid ? "" : healthPid ? " (from /api/health)" : ""}`,
+		`Server process: ${processRunning ? "running" : "not running"}`,
+		...(healthError ? [`Health error: ${healthError}`] : []),
 		`Auto-start: ${config.autoStartServer ? "enabled" : "disabled"}`,
 		`Manual stop: ${isServerManuallyStopped() ? "yes — run /hub start to clear" : "no"}`,
 		`Bind: ${config.host}:${config.port}`,
@@ -741,7 +754,8 @@ export default function piHubExtension(pi: ExtensionAPI) {
 		} else if (sub === "info" || !sub) {
 			notifyFallback(hubInfoText(config), "info");
 		} else if (sub === "status") {
-			notifyFallback(hubStatusText(config, serverOk), serverOk ? "info" : "warning");
+			const text = await hubStatusText(config, serverOk);
+			notifyFallback(text, text.includes("Server HTTP: reachable") ? "info" : "warning");
 		} else if (sub === "firewall") {
 			notifyFallback(firewallHint(config), "info");
 		} else {
@@ -1128,7 +1142,8 @@ async function handleCollaborationMessage(command: any): Promise<void> {
 				return;
 			}
 			if (sub === "status") {
-				ctx.ui.notify(hubStatusText(config, serverOk), serverOk ? "info" : "warning");
+				const text = await hubStatusText(config, serverOk);
+				ctx.ui.notify(text, text.includes("Server HTTP: reachable") ? "info" : "warning");
 				return;
 			}
 			if (sub === "firewall") {
