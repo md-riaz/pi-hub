@@ -24,7 +24,7 @@ Reason: private-by-default is safer. Phone access over LAN/VPN/Tailscale require
 
 ### Bearer token auth
 
-Reason: enough for trusted LAN/VPN use. App and extension use `Authorization: Bearer <token>` for every request, including SSE and browse/attachment routes. Query-string tokens are disabled by default (`allowQueryToken: false`) and only exist for manual/debug compatibility.
+Reason: enough for trusted LAN/VPN use. App and extension use `Authorization: Bearer <token>` for every protected request, including SSE and browse/attachment routes. Query-string tokens are not supported.
 
 ### `/hub stop` vs `/hub server stop`
 

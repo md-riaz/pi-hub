@@ -41,7 +41,7 @@ interface PendingMobileInput {
 }
 
 const HUB_PROTOCOL_VERSION = 2;
-const HUB_CLIENT_VERSION = "2.0.34";
+const HUB_CLIENT_VERSION = "2.0.35";
 const HUB_CLIENT_NAME = "pi-hub-extension";
 
 const DEFAULT_CONFIG: PiHubConfig = {

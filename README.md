@@ -1,6 +1,6 @@
 # Pi Hub
 
-**Version: 2.0.34+34**
+**Version: 2.0.35+35**
 
 Pi Hub is a local-first mission-control dashboard for Pi Coding Agent sessions. It combines a Pi extension, a small HTTP/SSE hub server, and a Flutter Android app so you can monitor and control multiple running agents from a phone over any network that can reach the hub host.
 
@@ -16,7 +16,7 @@ Pi Hub is a local-first mission-control dashboard for Pi Coding Agent sessions. 
 - Server browse endpoint for remote directory listing.
 - Model sheet with scrollable list.
 - Agent creation endpoint for starting Pi in any existing directory on the hub host.
-- Bearer-token API auth, with query-string tokens disabled by default.
+- Bearer-token API auth for all protected routes.
 - Memory-only hub state by default: no transcript database and no cloud dependency.
 
 ## Architecture
@@ -170,7 +170,6 @@ Example:
   "historyLimit": 500,
   "autoStartServer": true,
   "pollIntervalMs": 1500,
-  "allowQueryToken": false,
   "corsOrigins": [],
   "agentCreation": {
     "piCommand": "pi",
@@ -189,7 +188,6 @@ Key fields:
 - `historyLimit`: maximum in-memory transcript items per session.
 - `autoStartServer`: lets the extension start the hub automatically.
 - `pollIntervalMs`: how often sessions poll for mobile commands.
-- `allowQueryToken`: optional manual/debug compatibility for `?token=` URLs. Keep `false`; app and extension use `Authorization: Bearer`.
 - `corsOrigins`: browser CORS allowlist. Empty disables browser cross-origin access.
 - `agentCreation`: controls which Pi command/default args are used for creating new sessions.
 
@@ -235,7 +233,7 @@ curl -H "Authorization: Bearer <token>" "http://127.0.0.1:17878/api/health"
 
 ## API summary
 
-All API routes except `/` require `Authorization: Bearer <token>`. Query-string tokens are disabled by default and only accepted when `allowQueryToken` is explicitly set to `true`.
+All API routes except `/` require `Authorization: Bearer <token>`. Query-string tokens are not supported.
 
 ### Canonical routes
 

@@ -4,7 +4,7 @@ Pi Hub v2 is additive. Pi Hub uses canonical `/api/...` routes while mobile miss
 
 ## Compatibility
 
-- Auth uses `Authorization: Bearer <token>`. Query-string tokens are disabled by default and only available when `allowQueryToken` is explicitly enabled for manual debugging.
+- Auth uses `Authorization: Bearer <token>`. Query-string tokens are not supported.
 - Canonical routes keep their response shape: `/api/register`, `/api/presence`, `/api/event`, `/api/stream`, `/api/snapshot`, `/api/send`, `/api/control`, `/api/poll`.
 - New fields are optional for older clients. Unknown fields should be ignored.
 - Server normalizes v1 payloads into internal v2 events before applying state changes.
@@ -53,7 +53,7 @@ Fields:
     "host": "0.0.0.0",
     "port": 17878,
     "time": "2026-02-03T04:05:06.000Z",
-    "version": "2.0.34",
+    "version": "2.0.35",
     "schemaVersion": 2,
     "capabilities": {
       "health": true,

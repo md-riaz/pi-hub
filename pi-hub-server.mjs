@@ -13,7 +13,7 @@ const HUB_DIR = path.join(PI_HOME, "pi-hub");
 const CONFIG_PATH = path.join(HUB_DIR, "config.json");
 const PID_PATH = path.join(HUB_DIR, "server.pid");
 
-const SERVER_VERSION = "2.0.34";
+const SERVER_VERSION = "2.0.35";
 
 const DEFAULT_CONFIG = {
   enabled: true,
@@ -24,7 +24,6 @@ const DEFAULT_CONFIG = {
   staleThresholdMs: 120_000,
   commandTimeoutMs: 300_000,
   commandHistoryLimit: 500,
-  allowQueryToken: false,
   corsOrigins: [],
   agentCreation: {
     piCommand: "pi",
@@ -65,7 +64,7 @@ function ensureConfig() {
   if (!Number.isFinite(Number(config.staleThresholdMs))) config.staleThresholdMs = DEFAULT_CONFIG.staleThresholdMs;
   if (!Number.isFinite(Number(config.commandTimeoutMs))) config.commandTimeoutMs = DEFAULT_CONFIG.commandTimeoutMs;
   if (!Number.isFinite(Number(config.commandHistoryLimit))) config.commandHistoryLimit = DEFAULT_CONFIG.commandHistoryLimit;
-  config.allowQueryToken = config.allowQueryToken === true;
+  delete config.allowQueryToken;
   config.corsOrigins = Array.isArray(config.corsOrigins) ? config.corsOrigins.filter(origin => typeof origin === "string" && origin.trim()).map(origin => origin.trim()) : [];
   config.agentCreation = normalizeAgentCreationConfig(config.agentCreation);
   config.staleThresholdMs = Math.max(0, Number(config.staleThresholdMs));
@@ -257,14 +256,14 @@ function readBody(req) {
   });
 }
 
-function getToken(req, url) {
+function getToken(req) {
   const auth = req.headers.authorization || "";
   if (auth.toLowerCase().startsWith("bearer ")) return auth.slice(7).trim();
-  return config.allowQueryToken ? url.searchParams.get("token") || "" : "";
+  return "";
 }
 
 function isAuthorized(req, url) {
-  return config.token && getToken(req, url) === config.token;
+  return config.token && getToken(req) === config.token;
 }
 
 function broadcast(payload) {

@@ -1,6 +1,6 @@
 # Pi Hub Android App
 
-Flutter Android client for Pi Hub mission control (v2.0.34+34).
+Flutter Android client for Pi Hub mission control (v2.0.35+35).
 
 ## Run from source
 
