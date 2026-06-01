@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -30,6 +31,66 @@ class PiHubApp extends StatelessWidget {
   }
 }
 
+class _PendingUserMessage {
+  const _PendingUserMessage({
+    required this.id,
+    required this.sessionId,
+    required this.text,
+    required this.createdAt,
+    this.failed = false,
+  });
+
+  final String id;
+  final String sessionId;
+  final String text;
+  final int createdAt;
+  final bool failed;
+
+  factory _PendingUserMessage.fromJson(Map<String, dynamic> json) {
+    return _PendingUserMessage(
+      id: json['id']?.toString() ?? '',
+      sessionId: json['sessionId']?.toString() ?? '',
+      text: json['text']?.toString() ?? '',
+      createdAt: json['createdAt'] is num
+          ? (json['createdAt'] as num).toInt()
+          : DateTime.now().millisecondsSinceEpoch,
+      failed: json['failed'] == true,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'sessionId': sessionId,
+    'text': text,
+    'createdAt': createdAt,
+    'failed': failed,
+  };
+
+  _PendingUserMessage copyWith({bool? failed}) {
+    return _PendingUserMessage(
+      id: id,
+      sessionId: sessionId,
+      text: text,
+      createdAt: createdAt,
+      failed: failed ?? this.failed,
+    );
+  }
+
+  HubItem toHubItem() {
+    return HubItem(
+      id: id,
+      kind: 'user',
+      role: 'queued_user_message',
+      timestamp: createdAt,
+      text: text,
+      metadata: {
+        'commandStatus': failed ? 'send failed · kept locally' : 'sending...',
+        'localPending': true,
+      },
+    );
+  }
+}
+
 class HubHomePage extends StatefulWidget {
   const HubHomePage({super.key});
 
@@ -41,6 +102,7 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
   static const _prefServerUrl = 'hub_server_url';
   static const _prefToken = 'hub_token';
   static const _prefRecentConnections = 'hub_recent_connections';
+  static const _prefPendingMessages = 'hub_pending_user_messages';
   static const _secureTokenKey = 'hub_token';
   static const _secureRecentTokenPrefix = 'hub_recent_token_';
   static const _secureStorage = FlutterSecureStorage();
@@ -61,6 +123,7 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
   Timer? _reconnectTimer;
   final Random _random = Random();
   List<Map<String, String>> _recentConnections = [];
+  final List<_PendingUserMessage> _pendingMessages = [];
   String? _lastUsedModel;
 
   bool get _connected =>
@@ -102,6 +165,7 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
     if (savedToken != null && savedToken.isNotEmpty) {
       _tokenController.text = savedToken;
     }
+    await _loadPendingMessages(prefs);
     final recentJson = prefs.getStringList(_prefRecentConnections);
     if (recentJson != null) {
       _recentConnections = [];
@@ -180,6 +244,128 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _loadPendingMessages(SharedPreferences prefs) async {
+    _pendingMessages.clear();
+    for (final raw in prefs.getStringList(_prefPendingMessages) ?? const []) {
+      try {
+        final data = jsonDecode(raw);
+        if (data is Map) {
+          final message = _PendingUserMessage.fromJson(
+            data.map((key, value) => MapEntry(key.toString(), value)),
+          );
+          if (message.text.trim().isNotEmpty) _pendingMessages.add(message);
+        }
+      } catch (_) {
+        // Ignore corrupt legacy entries.
+      }
+    }
+  }
+
+  Future<void> _savePendingMessages() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      _prefPendingMessages,
+      _pendingMessages.map((message) => jsonEncode(message.toJson())).toList(),
+    );
+  }
+
+  _PendingUserMessage _addPendingMessage(String sessionId, String text) {
+    final message = _PendingUserMessage(
+      id: 'local-${DateTime.now().microsecondsSinceEpoch}',
+      sessionId: sessionId,
+      text: text,
+      createdAt: DateTime.now().millisecondsSinceEpoch,
+    );
+    _pendingMessages.add(message);
+    unawaited(_savePendingMessages());
+    if (_snapshot != null) {
+      setState(() => _snapshot = _snapshotWithPendingMessages(_snapshot!));
+    }
+    return message;
+  }
+
+  void _markPendingMessageFailed(String id) {
+    final index = _pendingMessages.indexWhere((message) => message.id == id);
+    if (index < 0) return;
+    _pendingMessages[index] = _pendingMessages[index].copyWith(failed: true);
+    unawaited(_savePendingMessages());
+    if (_snapshot != null) {
+      setState(() => _snapshot = _snapshotWithPendingMessages(_snapshot!));
+    }
+  }
+
+  HubSnapshot _snapshotWithPendingMessages(HubSnapshot snapshot) {
+    if (_pendingMessages.isEmpty) return snapshot;
+    final deliveredIds = <String>{};
+    for (final message in _pendingMessages) {
+      final session = snapshot.sessions
+          .where((candidate) => candidate.id == message.sessionId)
+          .firstOrNull;
+      if (session != null && _hasServerUserMessage(session, message)) {
+        deliveredIds.add(message.id);
+      }
+    }
+    if (deliveredIds.isNotEmpty) {
+      _pendingMessages.removeWhere(
+        (message) => deliveredIds.contains(message.id),
+      );
+      unawaited(_savePendingMessages());
+    }
+    if (_pendingMessages.isEmpty) return snapshot;
+
+    return HubSnapshot(
+      server: snapshot.server,
+      commands: snapshot.commands,
+      sessions: [
+        for (final session in snapshot.sessions)
+          _sessionWithPendingMessages(session),
+      ],
+    );
+  }
+
+  bool _hasServerUserMessage(HubSession session, _PendingUserMessage pending) {
+    return session.history.any(
+      (item) =>
+          item.kind == 'user' &&
+          !item.id.startsWith('local-') &&
+          item.text.trim() == pending.text.trim(),
+    );
+  }
+
+  HubSession _sessionWithPendingMessages(HubSession session) {
+    final pending = _pendingMessages
+        .where((message) => message.sessionId == session.id)
+        .toList();
+    if (pending.isEmpty) return session;
+    final history = [...session.history];
+    for (final message in pending) {
+      if (history.any((item) => item.id == message.id)) continue;
+      history.add(message.toHubItem());
+    }
+    history.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    return HubSession(
+      id: session.id,
+      name: session.name,
+      cwd: session.cwd,
+      model: session.model,
+      pid: session.pid,
+      startedAt: session.startedAt,
+      lastSeen: session.lastSeen,
+      status: session.status,
+      online: session.online,
+      history: history,
+      liveMessage: session.liveMessage,
+      tools: session.tools,
+      contextUsage: session.contextUsage,
+      availableModels: session.availableModels,
+      slashCommands: session.slashCommands,
+      todos: session.todos,
+      lastEvent: session.lastEvent,
+      health: session.health,
+      commands: session.commands,
+    );
+  }
+
   String _connectionErrorHelp(Object error) {
     final message = error.toString();
     final lower = message.toLowerCase();
@@ -213,7 +399,7 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
         if (!mounted) return;
         _streamRetry = 0;
         setState(() {
-          _snapshot = snapshot;
+          _snapshot = _snapshotWithPendingMessages(snapshot);
           if (_detailSessionId != null &&
               !snapshot.sessions.any((s) => s.id == _detailSessionId)) {
             _detailSessionId = null;
@@ -249,7 +435,7 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
           final snapshot = await _client.fetchSnapshot();
           if (!mounted || _manualDisconnect) return;
           setState(() {
-            _snapshot = snapshot;
+            _snapshot = _snapshotWithPendingMessages(snapshot);
             _connectionState = 'Reconnected';
             _connectionError = null;
           });
@@ -285,7 +471,7 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
       final snapshot = await _client.fetchSnapshot();
       if (!mounted) return;
       setState(() {
-        _snapshot = snapshot;
+        _snapshot = _snapshotWithPendingMessages(snapshot);
         _connectionState = 'Connected';
         _connecting = false;
         _connectionError = null;
@@ -338,7 +524,7 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
       final snapshot = await _client.fetchSnapshot();
       if (!mounted || _manualDisconnect) return;
       setState(() {
-        _snapshot = snapshot;
+        _snapshot = _snapshotWithPendingMessages(snapshot);
         _streamRetry = 0;
         _connectionState = 'Live';
         _connectionError = null;
@@ -402,6 +588,7 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
   }
 
   Future<void> _sendMessage(String sessionId, String text) async {
+    final pending = _addPendingMessage(sessionId, text);
     try {
       await _client.sendMessage(sessionId, text);
       if (!mounted) return;
@@ -410,9 +597,10 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
       );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Send failed: $error')));
+      _markPendingMessageFailed(pending.id);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Send failed. Message kept locally: $error')),
+      );
     }
   }
 
