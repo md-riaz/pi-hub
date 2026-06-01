@@ -556,6 +556,14 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   Widget build(BuildContext context) {
     final items = _visibleItems;
     final models = [...widget.availableModels];
+    models.sort((a, b) {
+      String sortLabel(HubModel model) {
+        final name = model.name.trim();
+        return (name.isNotEmpty ? name : model.id).toLowerCase();
+      }
+
+      return sortLabel(a).compareTo(sortLabel(b));
+    });
     if (models.isEmpty && _currentModel.isNotEmpty) {
       models.add(
         HubModel(id: _currentModel, name: _currentModel, provider: null),
