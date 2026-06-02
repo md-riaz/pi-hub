@@ -41,7 +41,7 @@ interface PendingMobileInput {
 }
 
 const HUB_PROTOCOL_VERSION = 2;
-const HUB_CLIENT_VERSION = "2.0.42";
+const HUB_CLIENT_VERSION = "2.0.44";
 const HUB_CLIENT_NAME = "pi-hub-extension";
 
 const DEFAULT_CONFIG: PiHubConfig = {
@@ -908,7 +908,12 @@ async function handleCollaborationMessage(command: any): Promise<void> {
 						const content = Array.isArray(command.attachments) && command.attachments.length > 0
 							? command.attachments
 							: command.text;
-						await Promise.resolve(pi.sendUserMessage(content, ctx.isIdle() ? undefined : { deliverAs: "followUp" }));
+						const deliveryMode = String(command.deliveryMode || "steer");
+						const sameSessionBusy = status !== "idle" || toolNames.size > 0;
+						const sendOptions = deliveryMode === "followUp" || (deliveryMode === "auto" && sameSessionBusy)
+							? { deliverAs: "followUp" }
+							: undefined;
+						await Promise.resolve(pi.sendUserMessage(content, sendOptions));
 						await sendEvent({
 							type: "input",
 							item: {

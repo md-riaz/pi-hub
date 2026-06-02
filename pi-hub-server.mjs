@@ -1200,7 +1200,8 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const commandType = text.startsWith("/") ? "slash_command" : "user_message";
-      const command = createCommand(sessionId, commandType, { text });
+      const deliveryMode = ["auto", "steer", "followUp"].includes(String(body.deliveryMode || "")) ? String(body.deliveryMode) : "steer";
+      const command = createCommand(sessionId, commandType, { text, deliveryMode });
       const session = getOrCreateSession(sessionId);
       recordOutgoingUserMessage(session, command, text);
       sendJson(req, res, 200, { ok: true, commandId: command.id });

@@ -57,8 +57,13 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
   final _promptController = TextEditingController();
   late String _selectedModel;
 
-  List<String> get _models =>
-      widget.availableModels.isEmpty ? ['default'] : widget.availableModels;
+  List<String> get _models {
+    final models = widget.availableModels.isEmpty
+        ? ['default']
+        : [...widget.availableModels];
+    models.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return models;
+  }
 
   @override
   void initState() {
@@ -77,78 +82,159 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
   }
 
   Future<void> _showModelPicker() async {
+    final searchController = TextEditingController();
+    var query = '';
     final selected = await showModalBottomSheet<String>(
       context: context,
+      isScrollControlled: true,
       backgroundColor: HubTheme.panel,
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _Handle(),
-              const SizedBox(height: 16),
-              const Text(
-                'Select model',
-                style: TextStyle(
-                  color: HubTheme.text,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final filtered = _models
+              .where(
+                (model) => model.toLowerCase().contains(query.toLowerCase()),
+              )
+              .toList();
+          return SafeArea(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.82,
               ),
-              const SizedBox(height: 16),
-              Flexible(
-                child: ListView.separated(
-                  shrinkWrap: true,
-                  itemCount: _models.length,
-                  separatorBuilder: (_, index) => const SizedBox(height: 8),
-                  itemBuilder: (context, index) {
-                    final model = _models[index];
-                    return GestureDetector(
-                      onTap: () => Navigator.pop(context, model),
-                      child: Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: model == _selectedModel
-                              ? HubTheme.green.withValues(alpha: 0.1)
-                              : HubTheme.card,
-                          border: Border.all(
-                            color: model == _selectedModel
-                                ? HubTheme.green.withValues(alpha: 0.4)
-                                : HubTheme.softLine,
-                          ),
-                          borderRadius: BorderRadius.circular(16),
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  16,
+                  16,
+                  16 + MediaQuery.of(context).viewInsets.bottom,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _Handle(),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Select model',
+                      style: TextStyle(
+                        color: HubTheme.text,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: searchController,
+                      autofocus: _models.length > 8,
+                      style: const TextStyle(
+                        color: HubTheme.text,
+                        fontSize: 14,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: 'Search models',
+                        hintStyle: const TextStyle(color: HubTheme.text3),
+                        prefixIcon: const Icon(
+                          Icons.search,
+                          size: 18,
+                          color: HubTheme.text3,
                         ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                model,
-                                style: const TextStyle(
-                                  color: HubTheme.text,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
+                        suffixIcon: query.isEmpty
+                            ? null
+                            : IconButton(
+                                tooltip: 'Clear search',
+                                icon: const Icon(
+                                  Icons.close,
+                                  size: 18,
+                                  color: HubTheme.text3,
                                 ),
+                                onPressed: () {
+                                  searchController.clear();
+                                  setSheetState(() => query = '');
+                                },
                               ),
-                            ),
-                            if (model == _selectedModel)
-                              const Icon(
-                                Icons.check_circle,
-                                size: 18,
-                                color: HubTheme.green,
-                              ),
-                          ],
+                        filled: true,
+                        fillColor: HubTheme.card,
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: const BorderSide(
+                            color: HubTheme.softLine,
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: const BorderSide(color: HubTheme.green),
                         ),
                       ),
-                    );
-                  },
+                      onChanged: (value) => setSheetState(() => query = value),
+                    ),
+                    const SizedBox(height: 12),
+                    Flexible(
+                      child: filtered.isEmpty
+                          ? const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 32),
+                              child: Text(
+                                'No models found',
+                                style: TextStyle(color: HubTheme.text3),
+                              ),
+                            )
+                          : ListView.separated(
+                              shrinkWrap: true,
+                              itemCount: filtered.length,
+                              separatorBuilder: (_, index) =>
+                                  const SizedBox(height: 8),
+                              itemBuilder: (context, index) {
+                                final model = filtered[index];
+                                return GestureDetector(
+                                  onTap: () => Navigator.pop(context, model),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: model == _selectedModel
+                                          ? HubTheme.green.withValues(
+                                              alpha: 0.1,
+                                            )
+                                          : HubTheme.card,
+                                      border: Border.all(
+                                        color: model == _selectedModel
+                                            ? HubTheme.green.withValues(
+                                                alpha: 0.4,
+                                              )
+                                            : HubTheme.softLine,
+                                      ),
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            model,
+                                            style: const TextStyle(
+                                              color: HubTheme.text,
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                        if (model == _selectedModel)
+                                          const Icon(
+                                            Icons.check_circle,
+                                            size: 18,
+                                            color: HubTheme.green,
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
+    searchController.dispose();
     if (selected != null) setState(() => _selectedModel = selected);
   }
 

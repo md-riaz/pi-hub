@@ -9,7 +9,7 @@ class WaitingCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final question = event.metadata['question'] ?? event.text;
+    final question = _question();
     final options = _parseOptions();
 
     return Container(
@@ -80,9 +80,54 @@ class WaitingCard extends StatelessWidget {
     );
   }
 
+  String _question() {
+    final details = event.metadata['details'];
+    if (event.metadata['question'] != null) {
+      return event.metadata['question'].toString();
+    }
+    if (details is Map && details['question'] != null) {
+      return details['question'].toString();
+    }
+    final raw = event.metadata['rawEntry'];
+    if (raw is Map && raw['question'] != null) {
+      return raw['question'].toString();
+    }
+    return event.text;
+  }
+
   List<String> _parseOptions() {
-    final raw = event.metadata['options'];
-    if (raw is List) return raw.map((e) => e.toString()).toList();
+    for (final raw in [
+      event.metadata['options'],
+      event.metadata['choices'],
+      event.metadata['answers'],
+      if (event.metadata['details'] is Map) ...[
+        (event.metadata['details'] as Map)['options'],
+        (event.metadata['details'] as Map)['choices'],
+        (event.metadata['details'] as Map)['answers'],
+      ],
+      if (event.metadata['rawEntry'] is Map) ...[
+        (event.metadata['rawEntry'] as Map)['options'],
+        (event.metadata['rawEntry'] as Map)['choices'],
+        (event.metadata['rawEntry'] as Map)['answers'],
+      ],
+    ]) {
+      final parsed = _optionsFrom(raw);
+      if (parsed.isNotEmpty) return parsed;
+    }
     return [];
+  }
+
+  List<String> _optionsFrom(Object? raw) {
+    if (raw is! List) return const [];
+    return raw
+        .map((option) {
+          if (option is Map) {
+            return (option['label'] ?? option['value'] ?? option['text'] ?? '')
+                .toString();
+          }
+          return option.toString();
+        })
+        .where((option) => option.trim().isNotEmpty)
+        .toList();
   }
 }

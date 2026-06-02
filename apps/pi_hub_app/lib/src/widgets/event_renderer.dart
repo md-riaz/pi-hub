@@ -101,6 +101,8 @@ class EventRenderer extends StatelessWidget {
   Widget? _toolCallCard(HubItem event) {
     final toolCalls = _parseToolCalls(event.text);
     if (toolCalls.isNotEmpty) {
+      final questionCard = _askQuestionToolCard(event);
+      if (questionCard != null) return questionCard;
       final paired = _pairedResultsById();
       final hasAnyResult = paired.isNotEmpty;
       final hasAnyError = paired.values.any(
@@ -151,6 +153,82 @@ class EventRenderer extends StatelessWidget {
       return _terminalCard(event, title: 'Image attachment', status: 'done');
     }
     return null;
+  }
+
+  Widget? _askQuestionToolCard(HubItem event) {
+    final structured = event.metadata['toolCalls'];
+    if (structured is List) {
+      for (final item in structured) {
+        if (item is! Map) continue;
+        final name = item['name']?.toString().toLowerCase() ?? '';
+        if (!name.contains('ask_user_question') &&
+            !name.contains('askuserquestion')) {
+          continue;
+        }
+        final args = _toolArgumentsMap(item['arguments']);
+        final question =
+            args['question']?.toString() ??
+            args['prompt']?.toString() ??
+            event.text;
+        return WaitingCard(
+          event: HubItem(
+            id: '${event.id}-ask-user-question',
+            kind: 'waiting',
+            role: 'ask_user_question',
+            timestamp: event.timestamp,
+            text: question,
+            metadata: {
+              ...event.metadata,
+              'question': question,
+              if (args['options'] != null) 'options': args['options'],
+              if (args['choices'] != null) 'choices': args['choices'],
+              if (args['answers'] != null) 'answers': args['answers'],
+            },
+          ),
+          onQuickReply: onQuickReply,
+        );
+      }
+    }
+
+    final match = RegExp(
+      r'^\[tool_call\s+[^\]\s]+\s+ask_user_question\]\s*(.*)$',
+      multiLine: true,
+      caseSensitive: false,
+    ).firstMatch(event.text);
+    if (match == null) return null;
+    final args = _toolArgumentsMap(match.group(1));
+    final question =
+        args['question']?.toString() ??
+        args['prompt']?.toString() ??
+        event.text;
+    return WaitingCard(
+      event: HubItem(
+        id: '${event.id}-ask-user-question',
+        kind: 'waiting',
+        role: 'ask_user_question',
+        timestamp: event.timestamp,
+        text: question,
+        metadata: {
+          ...event.metadata,
+          'question': question,
+          if (args['options'] != null) 'options': args['options'],
+          if (args['choices'] != null) 'choices': args['choices'],
+          if (args['answers'] != null) 'answers': args['answers'],
+        },
+      ),
+      onQuickReply: onQuickReply,
+    );
+  }
+
+  Map<String, dynamic> _toolArgumentsMap(Object? arguments) {
+    if (arguments is Map) return Map<String, dynamic>.from(arguments);
+    if (arguments is String && arguments.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(arguments.trim());
+        if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      } catch (_) {}
+    }
+    return <String, dynamic>{};
   }
 
   Map<String, HubItem> _pairedResultsById() {
@@ -234,7 +312,11 @@ class EventRenderer extends StatelessWidget {
     if (_isSubAgentEvent(normalized)) {
       return _terminalCard(event, title: 'Sub-agent', status: 'done');
     }
-    if (display == 'waiting' || normalized.contains('waiting')) {
+    if (display == 'waiting' ||
+        normalized.contains('waiting') ||
+        normalized.contains('ask_user_question') ||
+        normalized.contains('ask user question') ||
+        normalized.contains('question')) {
       return WaitingCard(event: event, onQuickReply: onQuickReply);
     }
     if (display == 'edit' || normalized.contains('edit')) {

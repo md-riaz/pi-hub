@@ -275,13 +275,23 @@ class HubClient {
     );
   }
 
-  Future<void> sendMessage(String sessionId, String text) async {
+  Future<void> sendMessage(
+    String sessionId,
+    String text, {
+    String deliveryMode = 'steer',
+  }) async {
     final client = _newHttpClient();
     try {
       final request = await client.postUrl(Uri.parse('$baseUrl/api/send'));
       request.headers.contentType = ContentType.json;
       _authorize(request);
-      request.write(jsonEncode({'sessionId': sessionId, 'text': text}));
+      request.write(
+        jsonEncode({
+          'sessionId': sessionId,
+          'text': text,
+          'deliveryMode': deliveryMode,
+        }),
+      );
       final response = await request.close();
       final body = await response.transform(utf8.decoder).join();
       if (response.statusCode != 200) {
