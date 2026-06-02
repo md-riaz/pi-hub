@@ -1,7 +1,7 @@
 name: pi_hub_app
 description: "Pi Mobile Companion for monitoring and controlling Pi sessions over any network."
 publish_to: 'none'
-version: 2.0.42+42
+version: 2.0.43+43
 
 environment:
   sdk: ^3.11.1
@@ -15,6 +15,7 @@ dependencies:
   file_picker: ^8.1.7
   pasteboard: ^0.5.0
   flutter_markdown_plus: ^1.0.3
+  url_launcher: ^6.3.1
   # Push stays provider-neutral/local: app registers device via hub API; server may dispatch via ntfy when configured.
 
 dev_dependencies:
