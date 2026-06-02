@@ -41,7 +41,7 @@ interface PendingMobileInput {
 }
 
 const HUB_PROTOCOL_VERSION = 2;
-const HUB_CLIENT_VERSION = "2.0.44";
+const HUB_CLIENT_VERSION = "2.0.45";
 const HUB_CLIENT_NAME = "pi-hub-extension";
 
 const DEFAULT_CONFIG: PiHubConfig = {
@@ -274,16 +274,14 @@ function contentToText(content: unknown): string {
 		if (!part || typeof part !== "object") return String(part ?? "");
 		const item = part as Record<string, unknown>;
 		if (item.type === "text" && typeof item.text === "string") return item.text;
-		if (item.type === "thinking" && typeof item.thinking === "string") return `[thinking]
-${item.thinking}`;
+		if (item.type === "thinking" && typeof item.thinking === "string") return `[thinking]\n${item.thinking}`;
 		if (item.type === "toolCall") return `[tool_call ${String(item.id || item.name || "tool")} ${String(item.name || "tool")}] ${safeJson(item.arguments || {})}`;
 		if (item.type === "toolResult") return contentToText(item.content ?? item.result ?? item.text);
 		if (item.type === "image") return "[image]";
 		if (typeof item.text === "string") return item.text;
 		if (typeof item.content === "string" || Array.isArray(item.content)) return contentToText(item.content);
 		return `[${String(item.type || "content")}] ${safeJson(item)}`;
-	}).filter(Boolean).join("
-");
+	}).filter(Boolean).join("\n");
 }
 
 function contentPartSummaries(content: unknown): Record<string, unknown>[] {
