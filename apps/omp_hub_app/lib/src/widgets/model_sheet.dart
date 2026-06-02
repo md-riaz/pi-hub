@@ -74,7 +74,7 @@ class _ModelSheetState extends State<ModelSheet> {
       decoration: const BoxDecoration(
         color: HubTheme.panel,
         borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-        border: Border(top: BorderSide(color: HubTheme.line)),
+        border: Border(top: BorderSide(color: HubTheme.softLine)),
       ),
       padding: EdgeInsets.fromLTRB(
         16,
@@ -96,7 +96,7 @@ class _ModelSheetState extends State<ModelSheet> {
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Colors.white24,
+                    color: HubTheme.line,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -144,12 +144,12 @@ class _ModelSheetState extends State<ModelSheet> {
                     vertical: 12,
                   ),
                   enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(20),
                     borderSide: const BorderSide(color: HubTheme.softLine),
                   ),
                   focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: const BorderSide(color: HubTheme.blue),
+                    borderRadius: BorderRadius.circular(20),
+                    borderSide: const BorderSide(color: HubTheme.accent),
                   ),
                 ),
                 onChanged: (value) => setState(() => _query = value),
@@ -183,14 +183,14 @@ class _ModelSheetState extends State<ModelSheet> {
                               padding: const EdgeInsets.all(16),
                               decoration: BoxDecoration(
                                 color: selectedModel
-                                    ? HubTheme.blue.withValues(alpha: 0.1)
+                                    ? HubTheme.accentSoft
                                     : HubTheme.card,
                                 border: Border.all(
                                   color: selectedModel
-                                      ? HubTheme.blue.withValues(alpha: 0.4)
+                                      ? HubTheme.accent
                                       : HubTheme.softLine,
                                 ),
-                                borderRadius: BorderRadius.circular(16),
+                                borderRadius: BorderRadius.circular(20),
                               ),
                               child: Row(
                                 children: [
@@ -215,13 +215,13 @@ class _ModelSheetState extends State<ModelSheet> {
                                               Icon(
                                                 Icons.image_outlined,
                                                 size: 13,
-                                                color: HubTheme.blue,
+                                                color: HubTheme.accent,
                                               ),
                                               SizedBox(width: 4),
                                               Text(
                                                 'Image capable',
                                                 style: TextStyle(
-                                                  color: HubTheme.blue,
+                                                  color: HubTheme.accent,
                                                   fontSize: 11,
                                                   fontWeight: FontWeight.w700,
                                                 ),
@@ -236,7 +236,7 @@ class _ModelSheetState extends State<ModelSheet> {
                                     const Icon(
                                       Icons.check_circle,
                                       size: 18,
-                                      color: HubTheme.blue,
+                                      color: HubTheme.accent,
                                     ),
                                 ],
                               ),

@@ -116,16 +116,17 @@ class _ComposerState extends State<Composer> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFF07090D),
-        border: Border(top: BorderSide(color: HubTheme.softLine)),
+      decoration: BoxDecoration(
+        color: HubTheme.bg.withValues(alpha: 0.96),
+        border: const Border(top: BorderSide(color: HubTheme.softLine)),
       ),
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
       child: Container(
         decoration: BoxDecoration(
           color: HubTheme.panel,
-          border: Border.all(color: HubTheme.line),
-          borderRadius: BorderRadius.circular(26),
+          border: Border.all(color: HubTheme.softLine),
+          borderRadius: BorderRadius.circular(30),
+          boxShadow: [HubTheme.softShadow],
         ),
         padding: const EdgeInsets.all(8),
         child: Column(
@@ -144,7 +145,7 @@ class _ComposerState extends State<Composer> {
                     return Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       decoration: BoxDecoration(
-                        color: HubTheme.card,
+                        color: HubTheme.panel2,
                         border: Border.all(color: HubTheme.softLine),
                         borderRadius: BorderRadius.circular(999),
                       ),
@@ -190,13 +191,13 @@ class _ComposerState extends State<Composer> {
               maxLines: 5,
               style: const TextStyle(
                 color: HubTheme.text,
-                fontSize: 14,
-                fontFamily: 'monospace',
+                fontSize: 15,
+                height: 1.35,
               ),
               decoration: InputDecoration(
                 hintText: widget.attachments.isEmpty
-                    ? 'Steer this OMP session...'
-                    : 'Describe what OMP should do with attachment...',
+                    ? 'Ask anything...'
+                    : 'Describe what to do with attachment...',
                 hintStyle: const TextStyle(color: HubTheme.text3),
                 border: InputBorder.none,
                 contentPadding: const EdgeInsets.symmetric(
@@ -230,7 +231,7 @@ class _ComposerState extends State<Composer> {
                       vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color: HubTheme.card,
+                      color: HubTheme.panel2,
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Row(
@@ -275,15 +276,13 @@ class _ComposerState extends State<Composer> {
                     width: 36,
                     height: 36,
                     decoration: BoxDecoration(
-                      color: _canSend ? HubTheme.blue : HubTheme.card,
+                      color: _canSend ? HubTheme.accent : HubTheme.panel2,
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
-                      Icons.send,
-                      size: 17,
-                      color: _canSend
-                          ? const Color(0xFF06111F)
-                          : HubTheme.text3,
+                      Icons.arrow_upward,
+                      size: 18,
+                      color: _canSend ? Colors.white : HubTheme.text3,
                     ),
                   ),
                 ),

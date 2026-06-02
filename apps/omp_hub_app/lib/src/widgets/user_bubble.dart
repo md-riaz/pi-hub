@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../theme/hub_theme.dart';
 import 'inline_markdown_text.dart';
 
 class UserBubble extends StatelessWidget {
@@ -36,26 +37,20 @@ class UserBubble extends StatelessWidget {
       child: Align(
         alignment: Alignment.centerRight,
         child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
           constraints: BoxConstraints(
             maxWidth: MediaQuery.of(context).size.width * 0.84,
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
           decoration: BoxDecoration(
-            color: const Color(0xFF67A7FF),
+            color: HubTheme.userBubble,
             borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(22),
-              topRight: Radius.circular(22),
-              bottomLeft: Radius.circular(22),
-              bottomRight: Radius.circular(8),
+              topLeft: Radius.circular(24),
+              topRight: Radius.circular(10),
+              bottomLeft: Radius.circular(24),
+              bottomRight: Radius.circular(24),
             ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.15),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
+            boxShadow: [HubTheme.softShadow],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -67,15 +62,13 @@ class UserBubble extends StatelessWidget {
                     child: InlineMarkdownText(
                       text: text,
                       textAlign: TextAlign.start,
-                      style: const TextStyle(
-                        color: Color(0xFF06111F),
-                        fontSize: 14,
-                        height: 1.5,
+                      style: HubTheme.body.copyWith(
+                        color: const Color(0xFF3D2E24),
                       ),
                       codeBackground: const Color(
-                        0xFF06111F,
-                      ).withValues(alpha: 0.12),
-                      codeForeground: const Color(0xFF06111F),
+                        0xFF3D2E24,
+                      ).withValues(alpha: 0.10),
+                      codeForeground: const Color(0xFF3D2E24),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -87,7 +80,7 @@ class UserBubble extends StatelessWidget {
                       child: Icon(
                         Icons.copy_outlined,
                         size: 14,
-                        color: const Color(0xFF06111F).withValues(alpha: 0.62),
+                        color: const Color(0xFF3D2E24).withValues(alpha: 0.58),
                       ),
                     ),
                   ),
@@ -100,7 +93,7 @@ class UserBubble extends StatelessWidget {
                   child: Text(
                     [?status, ?time].join(' · '),
                     style: TextStyle(
-                      color: const Color(0xFF06111F).withValues(alpha: 0.6),
+                      color: const Color(0xFF3D2E24).withValues(alpha: 0.56),
                       fontSize: 10,
                     ),
                   ),

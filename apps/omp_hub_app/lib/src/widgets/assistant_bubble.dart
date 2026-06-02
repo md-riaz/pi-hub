@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../theme/hub_theme.dart';
 import 'inline_markdown_text.dart';
 
 class AssistantBubble extends StatefulWidget {
@@ -55,39 +56,38 @@ class _AssistantBubbleState extends State<AssistantBubble>
     return Align(
       alignment: Alignment.centerLeft,
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
         constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.88,
+          maxWidth: MediaQuery.of(context).size.width * 0.90,
         ),
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: const Color(0xFF0D1117),
-          border: Border.all(color: const Color(0xFF1B2635), width: 1),
+          color: HubTheme.assistantBubble,
+          border: Border.all(color: HubTheme.softLine, width: 1),
           borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(8),
-            topRight: Radius.circular(22),
-            bottomLeft: Radius.circular(8),
-            bottomRight: Radius.circular(22),
+            topLeft: Radius.circular(10),
+            topRight: Radius.circular(24),
+            bottomLeft: Radius.circular(24),
+            bottomRight: Radius.circular(24),
           ),
+          boxShadow: [HubTheme.softShadow],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Icon(
-                  Icons.smart_toy_outlined,
-                  size: 12,
-                  color: const Color(0xFF65D7E0),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  'PI',
-                  style: TextStyle(
-                    color: const Color(0xFF65D7E0),
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1,
+                Container(
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color: HubTheme.accentSoft,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: const Icon(
+                    Icons.auto_awesome,
+                    size: 13,
+                    color: HubTheme.accent,
                   ),
                 ),
                 const Spacer(),
@@ -99,29 +99,25 @@ class _AssistantBubbleState extends State<AssistantBubble>
                     child: Icon(
                       Icons.copy_outlined,
                       size: 14,
-                      color: Color(0xFF68768B),
+                      color: HubTheme.text3,
                     ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 10),
             InlineMarkdownText(
               text: widget.text,
-              style: const TextStyle(
-                color: Color(0xFFE7EDF7),
-                fontSize: 14,
-                height: 1.5,
-              ),
-              codeBackground: const Color(0xFF161B22),
-              codeForeground: const Color(0xFF79C0FF),
+              style: HubTheme.body,
+              codeBackground: HubTheme.panel2,
+              codeForeground: HubTheme.accent,
             ),
             if (widget.streaming)
               FadeTransition(
                 opacity: _opacity,
                 child: const Text(
                   '▋',
-                  style: TextStyle(color: Color(0xFF67A7FF), fontSize: 14),
+                  style: TextStyle(color: HubTheme.accent, fontSize: 14),
                 ),
               ),
           ],

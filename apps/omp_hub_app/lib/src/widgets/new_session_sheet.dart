@@ -249,7 +249,7 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
       decoration: const BoxDecoration(
         color: HubTheme.panel,
         borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-        border: Border(top: BorderSide(color: HubTheme.line)),
+        border: Border(top: BorderSide(color: HubTheme.softLine)),
       ),
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -264,7 +264,7 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Start New OMP Session',
+                      'Start New Conversation',
                       style: TextStyle(
                         color: HubTheme.text,
                         fontSize: 16,
@@ -310,8 +310,8 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: HubTheme.card,
-                    border: Border.all(color: HubTheme.line),
-                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: HubTheme.softLine),
+                    borderRadius: BorderRadius.circular(18),
                   ),
                   child: Text(
                     _pathController.text,
@@ -343,13 +343,13 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
                     vertical: 12,
                   ),
                   decoration: BoxDecoration(
-                    color: HubTheme.blue,
-                    borderRadius: BorderRadius.circular(16),
+                    color: HubTheme.accent,
+                    borderRadius: BorderRadius.circular(18),
                   ),
                   child: const Text(
                     'Browse',
                     style: TextStyle(
-                      color: Color(0xFF06111F),
+                      color: Colors.white,
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
                     ),
@@ -370,21 +370,21 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
             minLines: 3,
             style: const TextStyle(color: HubTheme.text, fontSize: 14),
             decoration: InputDecoration(
-              hintText: 'Tell OMP what to do in this directory...',
+              hintText: 'Describe what you want to do in this directory...',
               hintStyle: const TextStyle(color: HubTheme.text3),
               filled: true,
               fillColor: HubTheme.card,
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(color: HubTheme.line),
+                borderRadius: BorderRadius.circular(18),
+                borderSide: const BorderSide(color: HubTheme.softLine),
               ),
               enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(color: HubTheme.line),
+                borderRadius: BorderRadius.circular(18),
+                borderSide: const BorderSide(color: HubTheme.softLine),
               ),
               focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(color: HubTheme.blue),
+                borderRadius: BorderRadius.circular(18),
+                borderSide: const BorderSide(color: HubTheme.accent),
               ),
             ),
             onChanged: (_) => setState(() {}),
@@ -444,8 +444,8 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
               width: double.infinity,
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: canStart ? HubTheme.green : HubTheme.card,
-                borderRadius: BorderRadius.circular(16),
+                color: canStart ? HubTheme.accent : HubTheme.panel2,
+                borderRadius: BorderRadius.circular(18),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -453,15 +453,13 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
                   Icon(
                     Icons.play_arrow,
                     size: 17,
-                    color: canStart ? const Color(0xFF06110B) : HubTheme.text3,
+                    color: canStart ? Colors.white : HubTheme.text3,
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    'Start OMP Session',
+                    'Start Conversation',
                     style: TextStyle(
-                      color: canStart
-                          ? const Color(0xFF06110B)
-                          : HubTheme.text3,
+                      color: canStart ? Colors.white : HubTheme.text3,
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                     ),
@@ -484,7 +482,7 @@ class _Handle extends StatelessWidget {
         width: 40,
         height: 4,
         decoration: BoxDecoration(
-          color: Colors.white24,
+          color: HubTheme.line,
           borderRadius: BorderRadius.circular(2),
         ),
       ),

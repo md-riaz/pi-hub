@@ -118,9 +118,10 @@ class _SessionListScreenState extends State<SessionListScreen> {
           children: [
             // Header
             Container(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-              decoration: const BoxDecoration(
-                border: Border(bottom: BorderSide(color: HubTheme.softLine)),
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+              decoration: BoxDecoration(
+                color: HubTheme.panel.withValues(alpha: 0.82),
+                border: const Border(bottom: BorderSide(color: HubTheme.softLine)),
               ),
               child: Column(
                 children: [
@@ -130,22 +131,14 @@ class _SessionListScreenState extends State<SessionListScreen> {
                         width: 32,
                         height: 32,
                         decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFF17243B), Color(0xFF281C45)],
-                          ),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: HubTheme.line),
+                          color: HubTheme.accentSoft,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: HubTheme.softLine),
                         ),
-                        child: const Center(
-                          child: Text(
-                            'π',
-                            style: TextStyle(
-                              color: HubTheme.blue,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              fontFamily: 'monospace',
-                            ),
-                          ),
+                        child: const Icon(
+                          Icons.forum_outlined,
+                          size: 17,
+                          color: HubTheme.accent,
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -209,13 +202,13 @@ class _SessionListScreenState extends State<SessionListScreen> {
                         color: HubTheme.text3,
                       ),
                       filled: true,
-                      fillColor: HubTheme.panel2,
+                      fillColor: HubTheme.card,
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(22),
                         borderSide: const BorderSide(color: HubTheme.softLine),
                       ),
                       enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(22),
                         borderSide: const BorderSide(color: HubTheme.softLine),
                       ),
                       contentPadding: const EdgeInsets.symmetric(
@@ -240,18 +233,20 @@ class _SessionListScreenState extends State<SessionListScreen> {
                               vertical: 6,
                             ),
                             decoration: BoxDecoration(
-                              color: HubTheme.panel,
-                              border: Border.all(color: HubTheme.softLine),
+                              color: selected ? HubTheme.accentSoft : HubTheme.card,
+                              border: Border.all(
+                                color: selected ? HubTheme.accent : HubTheme.softLine,
+                              ),
                               borderRadius: BorderRadius.circular(999),
                             ),
                             child: Text(
                               '$f $count',
                               style: TextStyle(
                                 color: selected
-                                    ? HubTheme.text
+                                    ? HubTheme.accent
                                     : HubTheme.text2,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
                           ),
@@ -266,7 +261,34 @@ class _SessionListScreenState extends State<SessionListScreen> {
             Expanded(
               child: _filtered.isEmpty
                   ? Center(
-                      child: Text('No sessions found', style: HubTheme.caption),
+                      child: Padding(
+                        padding: const EdgeInsets.all(28),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 56,
+                              height: 56,
+                              decoration: BoxDecoration(
+                                color: HubTheme.accentSoft,
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: const Icon(
+                                Icons.chat_bubble_outline,
+                                color: HubTheme.accent,
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                            const Text('No conversations found', style: HubTheme.headingM),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Try a different search or start a new conversation.',
+                              style: HubTheme.caption.copyWith(fontSize: 13),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      ),
                     )
                   : ListView.builder(
                       itemCount: _filtered.length,
@@ -284,16 +306,16 @@ class _SessionListScreenState extends State<SessionListScreen> {
         children: [
           FloatingActionButton.small(
             heroTag: 'new_session',
-            backgroundColor: HubTheme.green,
+            backgroundColor: HubTheme.accent,
             onPressed: widget.onNewSession,
-            child: const Icon(Icons.add, color: Color(0xFF06110B)),
+            child: const Icon(Icons.add, color: Colors.white),
           ),
           const SizedBox(height: 8),
           FloatingActionButton.small(
             heroTag: 'broadcast',
-            backgroundColor: HubTheme.blue,
+            backgroundColor: HubTheme.card,
             onPressed: widget.onBroadcast,
-            child: const Icon(Icons.send, size: 17, color: Color(0xFF06111F)),
+            child: const Icon(Icons.send, size: 17, color: HubTheme.accent),
           ),
         ],
       ),
@@ -377,11 +399,13 @@ class _SessionCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: const BoxDecoration(
-          border: Border(
-            bottom: BorderSide(color: HubTheme.softLine, width: 0.5),
-          ),
+        margin: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: HubTheme.card,
+          border: Border.all(color: HubTheme.softLine),
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: [HubTheme.softShadow],
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -390,11 +414,11 @@ class _SessionCard extends StatelessWidget {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: HubTheme.card,
+                color: HubTheme.accentSoft,
                 border: Border.all(color: HubTheme.softLine),
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(16),
               ),
-              child: const Icon(Icons.terminal, size: 18, color: HubTheme.blue),
+              child: const Icon(Icons.chat_outlined, size: 18, color: HubTheme.accent),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -490,8 +514,8 @@ class _Tag extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
       decoration: BoxDecoration(
-        color: HubTheme.panel,
-        borderRadius: BorderRadius.circular(6),
+        color: HubTheme.panel2,
+        borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

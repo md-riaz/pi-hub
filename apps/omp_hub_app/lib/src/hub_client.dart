@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'hub_models.dart';
 
@@ -275,10 +276,11 @@ class HubClient {
     );
   }
 
-  Future<void> sendMessage(
+  Future<HubCommand?> sendMessage(
     String sessionId,
     String text, {
     String deliveryMode = 'steer',
+    String? clientCommandId,
   }) async {
     final client = _newHttpClient();
     try {
@@ -290,6 +292,7 @@ class HubClient {
           'sessionId': sessionId,
           'text': text,
           'deliveryMode': deliveryMode,
+          'clientCommandId': clientCommandId ?? newClientCommandId(),
         }),
       );
       final response = await request.close();
@@ -297,6 +300,11 @@ class HubClient {
       if (response.statusCode != 200) {
         throw Exception('${response.statusCode}: $body');
       }
+      final data = jsonDecode(body);
+      if (data is Map && data['command'] is Map) {
+        return HubCommand.fromJson(_stringKeyMap(data['command'] as Map));
+      }
+      return null;
     } finally {
       client.close(force: true);
     }
@@ -363,10 +371,11 @@ class HubClient {
   ///
   /// The hub stores attachments on the host and sends OMP a text prompt with
   /// local file paths, mirroring OMP TUI image paste behavior.
-  Future<void> sendAttachment(
+  Future<HubCommand?> sendAttachment(
     String sessionId, {
     required String text,
     required List<AttachmentData> attachments,
+    String? clientCommandId,
   }) async {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
     try {
@@ -378,15 +387,28 @@ class HubClient {
           'sessionId': sessionId,
           'text': text,
           'attachments': attachments.map((a) => a.toJson()).toList(),
+          'clientCommandId': clientCommandId ?? newClientCommandId(),
         }),
       );
       final res = await req.close().timeout(const Duration(seconds: 30));
       final body = await res.transform(utf8.decoder).join();
       if (res.statusCode != 200) throw Exception('${res.statusCode}: $body');
+      final data = jsonDecode(body);
+      if (data is Map && data['command'] is Map) {
+        return HubCommand.fromJson(_stringKeyMap(data['command'] as Map));
+      }
+      return null;
     } finally {
       client.close(force: true);
     }
   }
+}
+
+String newClientCommandId() {
+  final random = Random.secure();
+  final bytes = List<int>.generate(12, (_) => random.nextInt(256));
+  final suffix = base64UrlEncode(bytes).replaceAll('=', '');
+  return 'app-${DateTime.now().microsecondsSinceEpoch}-$suffix';
 }
 
 class BrowseResult {

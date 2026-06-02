@@ -250,7 +250,7 @@ class _SlashSheetState extends State<SlashSheet> {
             ),
             const SizedBox(height: 6),
             const Text(
-              'Send any OMP slash command. Examples: /status, /compact, /model, /hub info',
+              'Send a slash command. Examples: /status, /compact, /model, /hub info',
               style: TextStyle(color: HubTheme.text3, fontSize: 12),
             ),
             const SizedBox(height: 14),

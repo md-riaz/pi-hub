@@ -96,7 +96,7 @@ class _BroadcastSheetState extends State<BroadcastSheet> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Send same instruction to multiple OMP sessions',
+                      'Send same instruction to multiple sessions',
                       style: HubTheme.caption,
                     ),
                   ],

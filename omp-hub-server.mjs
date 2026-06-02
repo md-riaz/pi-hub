@@ -484,9 +484,31 @@ function cancelQueuedCommand(commandId) {
   return markCommandStatus(command, "cancelled", { reason: "cancelled" }) || command;
 }
 
+
+function normalizedClientCommandId(value) {
+  return typeof value === "string" && value.trim() ? capString(value.trim(), 160) : "";
+}
+
+function duplicateCommandForClientId(sessionId, clientCommandId) {
+  const normalized = normalizedClientCommandId(clientCommandId);
+  if (!normalized) return undefined;
+  for (const command of commands.values()) {
+    if (command.sessionId === sessionId && command.payload?.clientCommandId === normalized) return command;
+  }
+  return undefined;
+}
+
+function commandPayloadWithClientId(payload = {}) {
+  const clientCommandId = normalizedClientCommandId(payload.clientCommandId);
+  return clientCommandId ? { ...payload, clientCommandId } : { ...payload };
+}
+
 function createCommand(sessionId, type, payload = {}) {
   if (!sessionId || typeof sessionId !== "string") throw new Error("sessionId required");
   expireCommands();
+  const commandPayload = commandPayloadWithClientId(payload);
+  const duplicate = duplicateCommandForClientId(sessionId, commandPayload.clientCommandId);
+  if (duplicate) return duplicate;
   const createdAt = Date.now();
   const command = {
     id: `cmd_${crypto.randomUUID()}`,
@@ -498,7 +520,7 @@ function createCommand(sessionId, type, payload = {}) {
     finishedAt: null,
     expiresAt: createdAt + Number(config.commandTimeoutMs),
     error: null,
-    payload: { ...payload },
+    payload: commandPayload,
   };
   commands.set(command.id, command);
   if (!commandQueues.has(sessionId)) commandQueues.set(sessionId, []);
@@ -1201,10 +1223,12 @@ const server = http.createServer(async (req, res) => {
       }
       const commandType = text.startsWith("/") ? "slash_command" : "user_message";
       const deliveryMode = ["auto", "steer", "followUp"].includes(String(body.deliveryMode || "")) ? String(body.deliveryMode) : "steer";
-      const command = createCommand(sessionId, commandType, { text, deliveryMode });
+      const command = createCommand(sessionId, commandType, { text, deliveryMode, clientCommandId: body.clientCommandId });
       const session = getOrCreateSession(sessionId);
-      recordOutgoingUserMessage(session, command, text);
-      sendJson(req, res, 200, { ok: true, commandId: command.id });
+      if (!session.history.some(item => item?.metadata?.commandId === command.id)) {
+        recordOutgoingUserMessage(session, command, text);
+      }
+      sendJson(req, res, 200, { ok: true, commandId: command.id, command: publicCommand(command) });
       return;
     }
 
@@ -1295,6 +1319,11 @@ const server = http.createServer(async (req, res) => {
       const matchingModels = Array.isArray(session.availableModels)
         ? session.availableModels.filter(model => model?.id === session.model || model?.name === session.model)
         : [];
+      const duplicate = duplicateCommandForClientId(sessionId, body.clientCommandId);
+      if (duplicate) {
+        sendJson(req, res, 200, { ok: true, commandId: duplicate.id, command: publicCommand(duplicate), attachments: duplicate.payload?.savedAttachments || [] });
+        return;
+      }
       const modelSupportsImages = matchingModels.some(model => Array.isArray(model?.input) && model.input.includes("image"));
       const attachmentDir = path.join(os.tmpdir(), "omp-hub-attachments");
       fs.mkdirSync(attachmentDir, { recursive: true });
@@ -1342,12 +1371,15 @@ const server = http.createServer(async (req, res) => {
         attachments: content,
         savedAttachments,
         attachmentMode: modelSupportsImages ? "inline-image" : "file-path",
+        clientCommandId: body.clientCommandId,
       });
-      recordOutgoingUserMessage(session, command, messageText, {
-        hasAttachments: savedAttachments.length > 0,
-        attachmentMode: modelSupportsImages ? "inline-image" : "file-path",
-      });
-      sendJson(req, res, 200, { ok: true, commandId: command.id, attachments: savedAttachments });
+      if (!session.history.some(item => item?.metadata?.commandId === command.id)) {
+        recordOutgoingUserMessage(session, command, messageText, {
+          hasAttachments: savedAttachments.length > 0,
+          attachmentMode: modelSupportsImages ? "inline-image" : "file-path",
+        });
+      }
+      sendJson(req, res, 200, { ok: true, commandId: command.id, command: publicCommand(command), attachments: savedAttachments });
       return;
     }
 

@@ -37,6 +37,7 @@ class _PendingUserMessage {
     required this.sessionId,
     required this.text,
     required this.createdAt,
+    this.commandId,
     this.failed = false,
   });
 
@@ -44,6 +45,7 @@ class _PendingUserMessage {
   final String sessionId;
   final String text;
   final int createdAt;
+  final String? commandId;
   final bool failed;
 
   factory _PendingUserMessage.fromJson(Map<String, dynamic> json) {
@@ -54,6 +56,7 @@ class _PendingUserMessage {
       createdAt: json['createdAt'] is num
           ? (json['createdAt'] as num).toInt()
           : DateTime.now().millisecondsSinceEpoch,
+      commandId: json['commandId']?.toString(),
       failed: json['failed'] == true,
     );
   }
@@ -63,15 +66,17 @@ class _PendingUserMessage {
     'sessionId': sessionId,
     'text': text,
     'createdAt': createdAt,
+    if (commandId != null) 'commandId': commandId,
     'failed': failed,
   };
 
-  _PendingUserMessage copyWith({bool? failed}) {
+  _PendingUserMessage copyWith({String? commandId, bool? failed}) {
     return _PendingUserMessage(
       id: id,
       sessionId: sessionId,
       text: text,
       createdAt: createdAt,
+      commandId: commandId ?? this.commandId,
       failed: failed ?? this.failed,
     );
   }
@@ -86,6 +91,8 @@ class _PendingUserMessage {
       metadata: {
         'commandStatus': failed ? 'send failed · kept locally' : 'sending...',
         'localPending': true,
+        'clientCommandId': id,
+        if (commandId != null) 'commandId': commandId,
       },
     );
   }
@@ -106,6 +113,9 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
   static const _secureTokenKey = 'hub_token';
   static const _secureRecentTokenPrefix = 'hub_recent_token_';
   static const _secureStorage = FlutterSecureStorage();
+  static const _pendingMessageTtl = Duration(minutes: 2);
+  static const _failedPendingRetention = Duration(minutes: 10);
+
 
   final TextEditingController _serverController = TextEditingController();
   final TextEditingController _tokenController = TextEditingController();
@@ -121,6 +131,7 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
   bool _resumeRefreshInFlight = false;
   int _streamRetry = 0;
   Timer? _reconnectTimer;
+  int _streamGeneration = 0;
   final Random _random = Random();
   List<Map<String, String>> _recentConnections = [];
   final List<_PendingUserMessage> _pendingMessages = [];
@@ -269,9 +280,13 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
     );
   }
 
-  _PendingUserMessage _addPendingMessage(String sessionId, String text) {
+  _PendingUserMessage _addPendingMessage(
+    String sessionId,
+    String text,
+    String clientCommandId,
+  ) {
     final message = _PendingUserMessage(
-      id: 'local-${DateTime.now().microsecondsSinceEpoch}',
+      id: clientCommandId,
       sessionId: sessionId,
       text: text,
       createdAt: DateTime.now().millisecondsSinceEpoch,
@@ -282,6 +297,13 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
       setState(() => _snapshot = _snapshotWithPendingMessages(_snapshot!));
     }
     return message;
+  }
+
+  void _attachPendingCommand(String clientCommandId, String commandId) {
+    final index = _pendingMessages.indexWhere((message) => message.id == clientCommandId);
+    if (index < 0) return;
+    _pendingMessages[index] = _pendingMessages[index].copyWith(commandId: commandId);
+    unawaited(_savePendingMessages());
   }
 
   void _markPendingMessageFailed(String id) {
@@ -295,6 +317,7 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
   }
 
   HubSnapshot _snapshotWithPendingMessages(HubSnapshot snapshot) {
+    _expirePendingMessages();
     if (_pendingMessages.isEmpty) return snapshot;
     final deliveredIds = <String>{};
     for (final message in _pendingMessages) {
@@ -302,6 +325,12 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
           .where((candidate) => candidate.id == message.sessionId)
           .firstOrNull;
       if (session != null && _hasServerUserMessage(session, message)) {
+        deliveredIds.add(message.id);
+        continue;
+      }
+      final commandId = message.commandId;
+      if (commandId != null &&
+          snapshot.commands.any((command) => command.id == commandId && !command.isPending)) {
         deliveredIds.add(message.id);
       }
     }
@@ -324,12 +353,34 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
   }
 
   bool _hasServerUserMessage(HubSession session, _PendingUserMessage pending) {
-    return session.history.any(
-      (item) =>
-          item.kind == 'user' &&
+    return session.history.any((item) {
+      final commandId = item.metadata['commandId']?.toString();
+      if (pending.commandId != null && commandId == pending.commandId) return true;
+      return item.kind == 'user' &&
           !item.id.startsWith('local-') &&
-          item.text.trim() == pending.text.trim(),
-    );
+          item.text.trim() == pending.text.trim();
+    });
+  }
+
+  void _expirePendingMessages() {
+    if (_pendingMessages.isEmpty) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    var changed = false;
+    for (var i = 0; i < _pendingMessages.length; i += 1) {
+      final message = _pendingMessages[i];
+      final age = Duration(milliseconds: now - message.createdAt);
+      if (!message.failed && age >= _pendingMessageTtl) {
+        _pendingMessages[i] = message.copyWith(failed: true);
+        changed = true;
+      }
+    }
+    final before = _pendingMessages.length;
+    _pendingMessages.removeWhere((message) {
+      final age = Duration(milliseconds: now - message.createdAt);
+      return message.failed && age >= _failedPendingRetention;
+    });
+    changed = changed || before != _pendingMessages.length;
+    if (changed) unawaited(_savePendingMessages());
   }
 
   HubSession _sessionWithPendingMessages(HubSession session) {
@@ -393,10 +444,13 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
   }
 
   void _startStream() {
-    unawaited(_subscription?.cancel());
+    final generation = ++_streamGeneration;
+    final staleSubscription = _subscription;
+    _subscription = null;
+    unawaited(staleSubscription?.cancel());
     _subscription = _client.streamSnapshots().listen(
       (snapshot) {
-        if (!mounted) return;
+        if (!mounted || generation != _streamGeneration) return;
         _streamRetry = 0;
         setState(() {
           _snapshot = _snapshotWithPendingMessages(snapshot);
@@ -408,12 +462,12 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
         });
       },
       onError: (Object error) {
-        if (!mounted || _manualDisconnect) return;
+        if (!mounted || _manualDisconnect || generation != _streamGeneration) return;
         setState(() => _connectionState = 'Reconnecting...');
         _scheduleReconnect();
       },
       onDone: () {
-        if (!mounted || _manualDisconnect) return;
+        if (!mounted || _manualDisconnect || generation != _streamGeneration) return;
         setState(() => _connectionState = 'Reconnecting...');
         _scheduleReconnect();
       },
@@ -458,7 +512,9 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
       _connectionState = 'Connecting...';
     });
 
+    _streamGeneration += 1;
     await _subscription?.cancel();
+    _subscription = null;
     _client.configure(
       baseUrl: _serverController.text,
       token: _tokenController.text,
@@ -508,6 +564,7 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
     }
     _resumeRefreshInFlight = true;
     _reconnectTimer?.cancel();
+    _streamGeneration += 1;
     final staleSubscription = _subscription;
     _subscription = null;
     unawaited(staleSubscription?.cancel());
@@ -542,6 +599,7 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
   Future<void> _disconnect() async {
     _manualDisconnect = true;
     _reconnectTimer?.cancel();
+    _streamGeneration += 1;
     final subscription = _subscription;
     _subscription = null;
     _client.close();
@@ -565,6 +623,7 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
   Future<void> _logout() async {
     _manualDisconnect = true;
     _reconnectTimer?.cancel();
+    _streamGeneration += 1;
     final subscription = _subscription;
     _subscription = null;
     _client.close();
@@ -588,9 +647,15 @@ class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
   }
 
   Future<void> _sendMessage(String sessionId, String text) async {
-    final pending = _addPendingMessage(sessionId, text);
+    final clientCommandId = newClientCommandId();
+    final pending = _addPendingMessage(sessionId, text, clientCommandId);
     try {
-      await _client.sendMessage(sessionId, text);
+      final command = await _client.sendMessage(
+        sessionId,
+        text,
+        clientCommandId: clientCommandId,
+      );
+      if (command?.id.isNotEmpty == true) _attachPendingCommand(pending.id, command!.id);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Sent'), duration: Duration(seconds: 1)),

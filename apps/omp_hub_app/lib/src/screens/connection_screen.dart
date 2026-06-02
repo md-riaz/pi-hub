@@ -57,36 +57,26 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
           child: Column(
             children: [
               const SizedBox(height: 60),
-              // OMP logo
               Container(
-                width: 64,
-                height: 64,
+                width: 68,
+                height: 68,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF17243B), Color(0xFF281C45)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
+                  color: HubTheme.accentSoft,
                   borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: HubTheme.line),
+                  border: Border.all(color: HubTheme.softLine),
+                  boxShadow: [HubTheme.softShadow],
                 ),
-                child: const Center(
-                  child: Text(
-                    'π',
-                    style: TextStyle(
-                      color: HubTheme.blue,
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                      fontFamily: 'monospace',
-                    ),
-                  ),
+                child: const Icon(
+                  Icons.forum_outlined,
+                  color: HubTheme.accent,
+                  size: 30,
                 ),
               ),
               const SizedBox(height: 16),
               const Text('Hub Mobile', style: HubTheme.headingL),
               const SizedBox(height: 8),
               Text(
-                'Connect to your hub server and control OMP sessions from your phone.',
+                'Connect to your hub server and continue conversations from your phone.',
                 style: HubTheme.caption.copyWith(fontSize: 14, height: 1.4),
                 textAlign: TextAlign.center,
               ),
@@ -115,8 +105,8 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: canConnect ? HubTheme.blue : HubTheme.card,
-                    borderRadius: BorderRadius.circular(16),
+                    color: canConnect ? HubTheme.accent : HubTheme.panel2,
+                    borderRadius: BorderRadius.circular(18),
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -134,15 +124,13 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                         const Icon(
                           Icons.wifi,
                           size: 17,
-                          color: Color(0xFF06111F),
+                          color: Colors.white,
                         ),
                       const SizedBox(width: 8),
                       Text(
                         widget.connecting ? 'Connecting...' : 'Connect',
                         style: TextStyle(
-                          color: canConnect
-                              ? const Color(0xFF06111F)
-                              : HubTheme.text3,
+                          color: canConnect ? Colors.white : HubTheme.text3,
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
                         ),
@@ -275,18 +263,18 @@ class _InputField extends StatelessWidget {
             hintText: placeholder,
             hintStyle: const TextStyle(color: HubTheme.text3),
             filled: true,
-            fillColor: HubTheme.panel,
+            fillColor: HubTheme.card,
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
-              borderSide: const BorderSide(color: HubTheme.line),
+              borderRadius: BorderRadius.circular(18),
+              borderSide: const BorderSide(color: HubTheme.softLine),
             ),
             enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
-              borderSide: const BorderSide(color: HubTheme.line),
+              borderRadius: BorderRadius.circular(18),
+              borderSide: const BorderSide(color: HubTheme.softLine),
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
-              borderSide: const BorderSide(color: HubTheme.blue),
+              borderRadius: BorderRadius.circular(18),
+              borderSide: const BorderSide(color: HubTheme.accent),
             ),
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 16,
@@ -316,9 +304,9 @@ class _RecentConn extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: HubTheme.panel,
+          color: HubTheme.card,
           border: Border.all(color: HubTheme.softLine),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
         ),
         child: Row(
           children: [
@@ -326,10 +314,10 @@ class _RecentConn extends StatelessWidget {
               width: 36,
               height: 36,
               decoration: BoxDecoration(
-                color: HubTheme.card,
-                borderRadius: BorderRadius.circular(12),
+                color: HubTheme.accentSoft,
+                borderRadius: BorderRadius.circular(14),
               ),
-              child: const Icon(Icons.dns, size: 17, color: HubTheme.green),
+              child: const Icon(Icons.dns, size: 17, color: HubTheme.accent),
             ),
             const SizedBox(width: 12),
             Expanded(

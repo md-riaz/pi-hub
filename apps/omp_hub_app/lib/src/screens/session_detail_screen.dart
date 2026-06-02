@@ -180,9 +180,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   String _commandStatusLabel(HubCommand command) {
     switch (command.status) {
       case 'queued':
-        return 'queued for OMP';
+        return 'queued for assistant';
       case 'delivered':
-        return 'sent to OMP';
+        return 'sent to assistant';
       default:
         return command.status;
     }
@@ -326,10 +326,12 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: HubTheme.panel,
+      backgroundColor: Colors.transparent,
       builder: (context) => SafeArea(
-        child: Padding(
+        child: Container(
+          margin: const EdgeInsets.all(12),
           padding: const EdgeInsets.all(16),
+          decoration: HubTheme.panelDecoration,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -361,10 +363,12 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     if (!mounted) return;
     await showModalBottomSheet(
       context: context,
-      backgroundColor: HubTheme.panel,
+      backgroundColor: Colors.transparent,
       builder: (context) => SafeArea(
-        child: Padding(
+        child: Container(
+          margin: const EdgeInsets.all(12),
           padding: const EdgeInsets.all(16),
+          decoration: HubTheme.panelDecoration,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -381,7 +385,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
               ListTile(
                 leading: const Icon(Icons.edit, color: HubTheme.blue),
                 title: const Text(
-                  'Edit before OMP receives it',
+                  'Edit before assistant receives it',
                   style: TextStyle(color: HubTheme.text),
                 ),
                 onTap: () async {
@@ -591,7 +595,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       child: Scaffold(
         backgroundColor: HubTheme.bg,
         appBar: AppBar(
-          backgroundColor: HubTheme.panel,
+          backgroundColor: HubTheme.panel.withValues(alpha: 0.92),
           leading: IconButton(
             icon: const Icon(Icons.chevron_left, color: HubTheme.text),
             onPressed: widget.onBack,
@@ -670,12 +674,33 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                 // Events
                 Expanded(
                   child: items.isEmpty
-                      ? const Center(
-                          child: Text(
-                            'No conversation history yet',
-                            style: TextStyle(
-                              color: HubTheme.text3,
-                              fontFamily: 'monospace',
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(28),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 56,
+                                  height: 56,
+                                  decoration: BoxDecoration(
+                                    color: HubTheme.accentSoft,
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: const Icon(
+                                    Icons.auto_awesome,
+                                    color: HubTheme.accent,
+                                  ),
+                                ),
+                                const SizedBox(height: 14),
+                                const Text('Start the conversation', style: HubTheme.headingM),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Send a prompt below. Replies will appear here.',
+                                  style: HubTheme.caption.copyWith(fontSize: 13),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
                             ),
                           ),
                         )
@@ -769,11 +794,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                 child: FloatingActionButton.small(
                   heroTag: 'scroll_to_bottom',
                   tooltip: 'Scroll to bottom',
-                  backgroundColor: HubTheme.blue,
+                  backgroundColor: HubTheme.accent,
                   onPressed: () => _scrollToBottom(force: true),
                   child: const Icon(
                     Icons.keyboard_arrow_down,
-                    color: Color(0xFF06111F),
+                    color: Colors.white,
                   ),
                 ),
               ),
@@ -806,9 +831,9 @@ class _QueuedNextHint extends StatelessWidget {
         margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: HubTheme.yellow.withValues(alpha: 0.10),
-          border: Border.all(color: HubTheme.yellow.withValues(alpha: 0.30)),
-          borderRadius: BorderRadius.circular(16),
+          color: HubTheme.card,
+          border: Border.all(color: HubTheme.yellow.withValues(alpha: 0.38)),
+          borderRadius: BorderRadius.circular(18),
         ),
         child: Row(
           children: [
@@ -884,9 +909,9 @@ class _ConnectionStatusBar extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
+        color: color.withValues(alpha: 0.10),
         border: Border(
-          bottom: BorderSide(color: color.withValues(alpha: 0.35)),
+          bottom: BorderSide(color: color.withValues(alpha: 0.25)),
         ),
       ),
       child: Row(
