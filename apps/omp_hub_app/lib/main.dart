@@ -1,0 +1,738 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:math';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'src/hub_client.dart';
+import 'src/hub_models.dart';
+import 'src/theme/hub_theme.dart';
+import 'src/screens/mission_control_screen.dart';
+import 'src/widgets/new_session_sheet.dart';
+import 'src/widgets/broadcast_sheet.dart';
+
+void main() {
+  runApp(const PiHubApp());
+}
+
+class PiHubApp extends StatelessWidget {
+  const PiHubApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Hub Mobile',
+      debugShowCheckedModeBanner: false,
+      theme: HubTheme.themeData,
+      home: const HubHomePage(),
+    );
+  }
+}
+
+class _PendingUserMessage {
+  const _PendingUserMessage({
+    required this.id,
+    required this.sessionId,
+    required this.text,
+    required this.createdAt,
+    this.failed = false,
+  });
+
+  final String id;
+  final String sessionId;
+  final String text;
+  final int createdAt;
+  final bool failed;
+
+  factory _PendingUserMessage.fromJson(Map<String, dynamic> json) {
+    return _PendingUserMessage(
+      id: json['id']?.toString() ?? '',
+      sessionId: json['sessionId']?.toString() ?? '',
+      text: json['text']?.toString() ?? '',
+      createdAt: json['createdAt'] is num
+          ? (json['createdAt'] as num).toInt()
+          : DateTime.now().millisecondsSinceEpoch,
+      failed: json['failed'] == true,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'sessionId': sessionId,
+    'text': text,
+    'createdAt': createdAt,
+    'failed': failed,
+  };
+
+  _PendingUserMessage copyWith({bool? failed}) {
+    return _PendingUserMessage(
+      id: id,
+      sessionId: sessionId,
+      text: text,
+      createdAt: createdAt,
+      failed: failed ?? this.failed,
+    );
+  }
+
+  HubItem toHubItem() {
+    return HubItem(
+      id: id,
+      kind: 'user',
+      role: 'queued_user_message',
+      timestamp: createdAt,
+      text: text,
+      metadata: {
+        'commandStatus': failed ? 'send failed · kept locally' : 'sending...',
+        'localPending': true,
+      },
+    );
+  }
+}
+
+class HubHomePage extends StatefulWidget {
+  const HubHomePage({super.key});
+
+  @override
+  State<HubHomePage> createState() => _HubHomePageState();
+}
+
+class _HubHomePageState extends State<HubHomePage> with WidgetsBindingObserver {
+  static const _prefServerUrl = 'hub_server_url';
+  static const _prefToken = 'hub_token';
+  static const _prefRecentConnections = 'hub_recent_connections';
+  static const _prefPendingMessages = 'hub_pending_user_messages';
+  static const _secureTokenKey = 'hub_token';
+  static const _secureRecentTokenPrefix = 'hub_recent_token_';
+  static const _secureStorage = FlutterSecureStorage();
+
+  final TextEditingController _serverController = TextEditingController();
+  final TextEditingController _tokenController = TextEditingController();
+  final HubClient _client = HubClient();
+
+  HubSnapshot? _snapshot;
+  StreamSubscription<HubSnapshot>? _subscription;
+  String? _detailSessionId;
+  String _connectionState = 'Disconnected';
+  String? _connectionError;
+  bool _connecting = false;
+  bool _manualDisconnect = false;
+  bool _resumeRefreshInFlight = false;
+  int _streamRetry = 0;
+  Timer? _reconnectTimer;
+  final Random _random = Random();
+  List<Map<String, String>> _recentConnections = [];
+  final List<_PendingUserMessage> _pendingMessages = [];
+  String? _lastUsedModel;
+
+  bool get _connected =>
+      _snapshot != null && !_connectionState.startsWith('Failed');
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _loadSavedConnection();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _reconnectTimer?.cancel();
+    _subscription?.cancel();
+    _serverController.dispose();
+    _tokenController.dispose();
+    _client.close();
+    super.dispose();
+  }
+
+  Future<void> _loadSavedConnection() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedUrl = prefs.getString(_prefServerUrl);
+    final legacyToken = prefs.getString(_prefToken);
+    var savedToken = await _secureStorage.read(key: _secureTokenKey);
+    if ((savedToken == null || savedToken.isEmpty) &&
+        legacyToken != null &&
+        legacyToken.isNotEmpty) {
+      savedToken = legacyToken;
+      await _secureStorage.write(key: _secureTokenKey, value: legacyToken);
+      await prefs.remove(_prefToken);
+    }
+    if (savedUrl != null && savedUrl.isNotEmpty) {
+      _serverController.text = savedUrl;
+    }
+    if (savedToken != null && savedToken.isNotEmpty) {
+      _tokenController.text = savedToken;
+    }
+    await _loadPendingMessages(prefs);
+    final recentJson = prefs.getStringList(_prefRecentConnections);
+    if (recentJson != null) {
+      _recentConnections = [];
+      for (final entry in recentJson) {
+        final parts = entry.split('|||');
+        final url = parts.length > 1 ? parts[1] : '';
+        var token = await _secureStorage.read(key: _recentTokenKey(url));
+        if ((token == null || token.isEmpty) && parts.length > 2) {
+          token = parts[2];
+          if (url.isNotEmpty && token.isNotEmpty) {
+            await _secureStorage.write(key: _recentTokenKey(url), value: token);
+          }
+        }
+        _recentConnections.add({
+          'name': parts[0],
+          'url': url,
+          'token': token ?? '',
+        });
+      }
+      await prefs.setStringList(
+        _prefRecentConnections,
+        _recentConnections.map((c) => '${c['name']}|||${c['url']}').toList(),
+      );
+    }
+    if (savedUrl != null &&
+        savedUrl.isNotEmpty &&
+        savedToken != null &&
+        savedToken.isNotEmpty) {
+      _connect();
+    }
+  }
+
+  String _recentTokenKey(String url) => '$_secureRecentTokenPrefix$url';
+
+  Future<void> _saveConnection() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_prefServerUrl, _serverController.text);
+    await prefs.remove(_prefToken);
+    // Update recent connections
+    final url = _serverController.text.trim();
+    final token = _tokenController.text.trim();
+    if (token.isNotEmpty) {
+      await _secureStorage.write(key: _secureTokenKey, value: token);
+    }
+    if (url.isNotEmpty && token.isNotEmpty) {
+      final name = Uri.tryParse(url)?.host ?? url;
+      _recentConnections.removeWhere((c) => c['url'] == url);
+      _recentConnections.insert(0, {'name': name, 'url': url, 'token': token});
+      if (_recentConnections.length > 5) {
+        _recentConnections = _recentConnections.sublist(0, 5);
+      }
+      final activeUrls = _recentConnections.map((c) => c['url'] ?? '').toSet();
+      for (final connection in _recentConnections) {
+        final recentUrl = connection['url'] ?? '';
+        final recentToken = connection['token'] ?? '';
+        if (recentUrl.isNotEmpty && recentToken.isNotEmpty) {
+          await _secureStorage.write(
+            key: _recentTokenKey(recentUrl),
+            value: recentToken,
+          );
+        }
+      }
+      final allSecureValues = await _secureStorage.readAll();
+      for (final key in allSecureValues.keys) {
+        if (key.startsWith(_secureRecentTokenPrefix)) {
+          final recentUrl = key.substring(_secureRecentTokenPrefix.length);
+          if (!activeUrls.contains(recentUrl)) {
+            await _secureStorage.delete(key: key);
+          }
+        }
+      }
+      await prefs.setStringList(
+        _prefRecentConnections,
+        _recentConnections.map((c) => '${c['name']}|||${c['url']}').toList(),
+      );
+    }
+  }
+
+  Future<void> _loadPendingMessages(SharedPreferences prefs) async {
+    _pendingMessages.clear();
+    for (final raw in prefs.getStringList(_prefPendingMessages) ?? const []) {
+      try {
+        final data = jsonDecode(raw);
+        if (data is Map) {
+          final message = _PendingUserMessage.fromJson(
+            data.map((key, value) => MapEntry(key.toString(), value)),
+          );
+          if (message.text.trim().isNotEmpty) _pendingMessages.add(message);
+        }
+      } catch (_) {
+        // Ignore corrupt legacy entries.
+      }
+    }
+  }
+
+  Future<void> _savePendingMessages() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      _prefPendingMessages,
+      _pendingMessages.map((message) => jsonEncode(message.toJson())).toList(),
+    );
+  }
+
+  _PendingUserMessage _addPendingMessage(String sessionId, String text) {
+    final message = _PendingUserMessage(
+      id: 'local-${DateTime.now().microsecondsSinceEpoch}',
+      sessionId: sessionId,
+      text: text,
+      createdAt: DateTime.now().millisecondsSinceEpoch,
+    );
+    _pendingMessages.add(message);
+    unawaited(_savePendingMessages());
+    if (_snapshot != null) {
+      setState(() => _snapshot = _snapshotWithPendingMessages(_snapshot!));
+    }
+    return message;
+  }
+
+  void _markPendingMessageFailed(String id) {
+    final index = _pendingMessages.indexWhere((message) => message.id == id);
+    if (index < 0) return;
+    _pendingMessages[index] = _pendingMessages[index].copyWith(failed: true);
+    unawaited(_savePendingMessages());
+    if (_snapshot != null) {
+      setState(() => _snapshot = _snapshotWithPendingMessages(_snapshot!));
+    }
+  }
+
+  HubSnapshot _snapshotWithPendingMessages(HubSnapshot snapshot) {
+    if (_pendingMessages.isEmpty) return snapshot;
+    final deliveredIds = <String>{};
+    for (final message in _pendingMessages) {
+      final session = snapshot.sessions
+          .where((candidate) => candidate.id == message.sessionId)
+          .firstOrNull;
+      if (session != null && _hasServerUserMessage(session, message)) {
+        deliveredIds.add(message.id);
+      }
+    }
+    if (deliveredIds.isNotEmpty) {
+      _pendingMessages.removeWhere(
+        (message) => deliveredIds.contains(message.id),
+      );
+      unawaited(_savePendingMessages());
+    }
+    if (_pendingMessages.isEmpty) return snapshot;
+
+    return HubSnapshot(
+      server: snapshot.server,
+      commands: snapshot.commands,
+      sessions: [
+        for (final session in snapshot.sessions)
+          _sessionWithPendingMessages(session),
+      ],
+    );
+  }
+
+  bool _hasServerUserMessage(HubSession session, _PendingUserMessage pending) {
+    return session.history.any(
+      (item) =>
+          item.kind == 'user' &&
+          !item.id.startsWith('local-') &&
+          item.text.trim() == pending.text.trim(),
+    );
+  }
+
+  HubSession _sessionWithPendingMessages(HubSession session) {
+    final pending = _pendingMessages
+        .where((message) => message.sessionId == session.id)
+        .toList();
+    if (pending.isEmpty) return session;
+    final history = [...session.history];
+    for (final message in pending) {
+      if (history.any((item) => item.id == message.id)) continue;
+      history.add(message.toHubItem());
+    }
+    history.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    return HubSession(
+      id: session.id,
+      name: session.name,
+      cwd: session.cwd,
+      model: session.model,
+      pid: session.pid,
+      startedAt: session.startedAt,
+      lastSeen: session.lastSeen,
+      status: session.status,
+      online: session.online,
+      history: history,
+      liveMessage: session.liveMessage,
+      tools: session.tools,
+      contextUsage: session.contextUsage,
+      availableModels: session.availableModels,
+      slashCommands: session.slashCommands,
+      todos: session.todos,
+      lastEvent: session.lastEvent,
+      health: session.health,
+      commands: session.commands,
+    );
+  }
+
+  String _connectionErrorHelp(Object error) {
+    final message = error.toString();
+    final lower = message.toLowerCase();
+    if (lower.contains('401') || lower.contains('unauthorized')) {
+      return 'Wrong token. Run /hub info on the host and copy the token.';
+    }
+    if (lower.contains('connection refused')) {
+      return 'Server not running or wrong address. Run /hub start then /hub info to get the correct URL.';
+    }
+    if (lower.contains('timed out') || lower.contains('timeout')) {
+      return 'Could not reach the server.\n\n• Check the URL matches /hub info output\n• Ensure port 18878 is open in Windows Firewall\n• Phone and host must be on the same network';
+    }
+    if (lower.contains('cleartext')) {
+      return 'Android blocks HTTP. Use the latest APK from GitHub Releases.';
+    }
+    if (lower.contains('socketexception') ||
+        lower.contains('network is unreachable') ||
+        lower.contains('failed host lookup')) {
+      return 'Network unreachable.\n\n• Use the LAN IP from /hub info (not localhost)\n• Phone and host must share a network\n• Check firewall allows inbound TCP 18878';
+    }
+    if (lower.contains('connection reset') || lower.contains('broken pipe')) {
+      return 'Connection dropped. The server may have restarted. Tap Connect to retry.';
+    }
+    return 'Connection failed: $message';
+  }
+
+  void _startStream() {
+    unawaited(_subscription?.cancel());
+    _subscription = _client.streamSnapshots().listen(
+      (snapshot) {
+        if (!mounted) return;
+        _streamRetry = 0;
+        setState(() {
+          _snapshot = _snapshotWithPendingMessages(snapshot);
+          if (_detailSessionId != null &&
+              !snapshot.sessions.any((s) => s.id == _detailSessionId)) {
+            _detailSessionId = null;
+          }
+          _connectionState = 'Live';
+        });
+      },
+      onError: (Object error) {
+        if (!mounted || _manualDisconnect) return;
+        setState(() => _connectionState = 'Reconnecting...');
+        _scheduleReconnect();
+      },
+      onDone: () {
+        if (!mounted || _manualDisconnect) return;
+        setState(() => _connectionState = 'Reconnecting...');
+        _scheduleReconnect();
+      },
+      cancelOnError: true,
+    );
+  }
+
+  void _scheduleReconnect() {
+    if (_manualDisconnect || _connecting) return;
+    _reconnectTimer?.cancel();
+    final baseDelaySeconds = _streamRetry < 5 ? (1 << _streamRetry) : 30;
+    final jitterMs = _random.nextInt(750);
+    _streamRetry += 1;
+    _reconnectTimer = Timer(
+      Duration(seconds: baseDelaySeconds, milliseconds: jitterMs),
+      () async {
+        if (!mounted || _manualDisconnect) return;
+        try {
+          final snapshot = await _client.fetchSnapshot();
+          if (!mounted || _manualDisconnect) return;
+          setState(() {
+            _snapshot = _snapshotWithPendingMessages(snapshot);
+            _connectionState = 'Reconnected';
+            _connectionError = null;
+          });
+          _startStream();
+        } catch (error) {
+          if (!mounted || _manualDisconnect) return;
+          setState(() => _connectionState = 'Reconnect failed');
+          _scheduleReconnect();
+        }
+      },
+    );
+  }
+
+  Future<void> _connect() async {
+    if (_connecting) return;
+    setState(() {
+      _connecting = true;
+      _manualDisconnect = false;
+      _streamRetry = 0;
+      _connectionState = 'Connecting...';
+    });
+
+    await _subscription?.cancel();
+    _client.configure(
+      baseUrl: _serverController.text,
+      token: _tokenController.text,
+    );
+    _serverController.text = _client.baseUrl;
+    _tokenController.text = _client.token;
+    await _saveConnection();
+
+    try {
+      final snapshot = await _client.fetchSnapshot();
+      if (!mounted) return;
+      setState(() {
+        _snapshot = _snapshotWithPendingMessages(snapshot);
+        _connectionState = 'Connected';
+        _connecting = false;
+        _connectionError = null;
+      });
+      _startStream();
+    } catch (error) {
+      if (!mounted) return;
+      final help = _connectionErrorHelp(error);
+      setState(() {
+        _connecting = false;
+        _connectionState = 'Failed';
+        _connectionError = help;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(help), duration: const Duration(seconds: 8)),
+      );
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshAfterResume();
+    } else if (state == AppLifecycleState.paused && !_manualDisconnect) {
+      setState(() => _connectionState = 'Background');
+    }
+  }
+
+  Future<void> _refreshAfterResume() async {
+    if (_manualDisconnect || _connecting || _resumeRefreshInFlight) return;
+    if (_serverController.text.trim().isEmpty ||
+        _tokenController.text.trim().isEmpty) {
+      return;
+    }
+    _resumeRefreshInFlight = true;
+    _reconnectTimer?.cancel();
+    final staleSubscription = _subscription;
+    _subscription = null;
+    unawaited(staleSubscription?.cancel());
+
+    if (mounted) {
+      setState(() => _connectionState = 'Resuming...');
+    }
+
+    try {
+      _client.configure(
+        baseUrl: _serverController.text,
+        token: _tokenController.text,
+      );
+      final snapshot = await _client.fetchSnapshot();
+      if (!mounted || _manualDisconnect) return;
+      setState(() {
+        _snapshot = _snapshotWithPendingMessages(snapshot);
+        _streamRetry = 0;
+        _connectionState = 'Live';
+        _connectionError = null;
+      });
+      _startStream();
+    } catch (error) {
+      if (!mounted || _manualDisconnect) return;
+      setState(() => _connectionState = 'Reconnect failed');
+      _scheduleReconnect();
+    } finally {
+      _resumeRefreshInFlight = false;
+    }
+  }
+
+  Future<void> _disconnect() async {
+    _manualDisconnect = true;
+    _reconnectTimer?.cancel();
+    final subscription = _subscription;
+    _subscription = null;
+    _client.close();
+    if (mounted) {
+      setState(() {
+        _snapshot = null;
+        _detailSessionId = null;
+        _connecting = false;
+        _connectionState = 'Disconnected';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Disconnected'),
+          duration: Duration(seconds: 1),
+        ),
+      );
+    }
+    unawaited(subscription?.cancel());
+  }
+
+  Future<void> _logout() async {
+    _manualDisconnect = true;
+    _reconnectTimer?.cancel();
+    final subscription = _subscription;
+    _subscription = null;
+    _client.close();
+
+    if (mounted) {
+      setState(() {
+        _snapshot = null;
+        _detailSessionId = null;
+        _connecting = false;
+        _connectionState = 'Disconnected';
+        _connectionError = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Logged out. Saved hubs are still available.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+    unawaited(subscription?.cancel());
+  }
+
+  Future<void> _sendMessage(String sessionId, String text) async {
+    final pending = _addPendingMessage(sessionId, text);
+    try {
+      await _client.sendMessage(sessionId, text);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sent'), duration: Duration(seconds: 1)),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      _markPendingMessageFailed(pending.id);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Send failed. Message kept locally: $error')),
+      );
+    }
+  }
+
+  List<String> _availableModelIds() {
+    final seen = <String>{};
+    final out = <String>[];
+    for (final session in _snapshot?.sessions ?? const <HubSession>[]) {
+      for (final model in session.availableModels) {
+        if (model.id.isNotEmpty && seen.add(model.id)) out.add(model.id);
+      }
+      if (session.model.isNotEmpty && seen.add(session.model)) {
+        out.add(session.model);
+      }
+    }
+    return out;
+  }
+
+  Future<void> _runControl(String action, {String? modelId}) async {
+    if (_detailSessionId == null) return;
+    final label = switch (action) {
+      'abort' => 'Stop running response',
+      'compact' => 'Compact context',
+      'shutdown' => 'Shut down session',
+      'set_model' => 'Model switch',
+      _ => action,
+    };
+    try {
+      await _client.sendControl(_detailSessionId!, action, modelId: modelId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$label queued'),
+          duration: const Duration(seconds: 1),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('$label failed: $error')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MissionControlScreen(
+      client: _client,
+      serverController: _serverController,
+      tokenController: _tokenController,
+      connecting: _connecting,
+      connected: _connected,
+      connectionError: _connectionError,
+      connectionState: _connectionState,
+      snapshot: _snapshot,
+      detailSessionId: _detailSessionId,
+      onConnect: _connect,
+      onOpenDetail: (id) => setState(() => _detailSessionId = id),
+      onCloseDetail: () => setState(() => _detailSessionId = null),
+      onSend: (text) {
+        if (_detailSessionId != null) _sendMessage(_detailSessionId!, text);
+      },
+      onAbort: () => _runControl('abort'),
+      onCompact: () => _runControl('compact'),
+      onShutdown: () => _runControl('shutdown'),
+      onModelChanged: (modelId) => _runControl('set_model', modelId: modelId),
+      onNewSession: () {
+        NewSessionSheet.show(
+          context,
+          client: _client,
+          availableModels: _availableModelIds(),
+          selectedModel:
+              _lastUsedModel ?? _snapshot?.sessions.firstOrNull?.model,
+          onStart: (result) async {
+            try {
+              _lastUsedModel = result.model;
+              final created = await _client.createAgent(
+                AgentCreateRequest(
+                  cwd: result.path,
+                  initialPrompt: result.prompt,
+                  model: result.model == 'default' ? '' : result.model,
+                ),
+              );
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Session ${created.summary}')),
+                );
+              }
+            } catch (e) {
+              if (context.mounted) {
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text('Create failed: $e')));
+              }
+            }
+          },
+        );
+      },
+      onBroadcast: () {
+        BroadcastSheet.show(
+          context,
+          sessions: _snapshot?.sessions ?? [],
+          onSend: (result) async {
+            for (final sid in result.sessionIds) {
+              try {
+                await _client.sendMessage(sid, '[Broadcast] ${result.prompt}');
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Broadcast to $sid failed: $e')),
+                  );
+                }
+              }
+            }
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'Broadcast sent to ${result.sessionIds.length} sessions',
+                  ),
+                ),
+              );
+            }
+          },
+        );
+      },
+      onDisconnect: _disconnect,
+      onLogout: _logout,
+      onRecentConnection: (conn) {
+        _serverController.text = conn['url'] ?? '';
+        _tokenController.text = conn['token'] ?? '';
+      },
+      recentConnections: _recentConnections,
+    );
+  }
+}

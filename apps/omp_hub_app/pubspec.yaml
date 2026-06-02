@@ -1,0 +1,27 @@
+name: omp_hub_app
+description: "Hub Mobile Companion for monitoring and controlling OMP sessions over any network."
+publish_to: 'none'
+version: 2.0.45+45
+
+environment:
+  sdk: ^3.11.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  shared_preferences: ^2.5.3
+  flutter_secure_storage: ^9.2.4
+  file_picker: ^8.1.7
+  pasteboard: ^0.5.0
+  flutter_markdown_plus: ^1.0.3
+  url_launcher: ^6.3.1
+  # Push stays provider-neutral/local: app registers device via hub API; server may dispatch via ntfy when configured.
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
